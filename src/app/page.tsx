@@ -1,6 +1,28 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createClient } from "@/lib/supabase/client";
+
+type QuestionRow = {
+  id: number;
+  body: string;
+  author: string;
+  topic: string;
+  created_at: string;
+  answered_at: string | null;
+};
+
+type VoteRow = {
+  question_id: number;
+  client_id: string;
+};
 
 type Question = {
   id: number;
@@ -15,75 +37,144 @@ type Question = {
 
 type Filter = "top" | "new" | "answered";
 
-const initialQuestions: Question[] = [
-  {
-    id: 1,
-    body: "What is the cleanest way to structure Supabase clients for server components, route handlers, and browser interactions?",
-    author: "Mina",
-    topic: "Architecture",
-    votes: 28,
-    createdAt: "2 min ago",
-    answered: false,
-  },
-  {
-    id: 2,
-    body: "Can we use realtime subscriptions with row-level security without leaking events for rows a user cannot read?",
-    author: "Drew",
-    topic: "Realtime",
-    votes: 21,
-    createdAt: "6 min ago",
-    answered: false,
-  },
-  {
-    id: 3,
-    body: "Where should form validation live when using server actions and Supabase inserts together?",
-    author: "Priya",
-    topic: "Forms",
-    votes: 17,
-    createdAt: "9 min ago",
-    answered: true,
-  },
-  {
-    id: 4,
-    body: "How would you model one vote per person if we start anonymous and add auth later?",
-    author: "Sam",
-    topic: "Data model",
-    votes: 15,
-    createdAt: "14 min ago",
-    answered: false,
-  },
-  {
-    id: 5,
-    body: "What should we cache in Next.js when the data is also updating live through Supabase realtime?",
-    author: "Jules",
-    topic: "Caching",
-    votes: 11,
-    createdAt: "18 min ago",
-    answered: false,
-  },
-  {
-    id: 6,
-    body: "Can storage uploads be private while still showing thumbnails in a public project gallery?",
-    author: "Noah",
-    topic: "Storage",
-    votes: 8,
-    createdAt: "24 min ago",
-    answered: true,
-  },
-];
-
 const filters: { label: string; value: Filter }[] = [
   { label: "Top", value: "top" },
   { label: "New", value: "new" },
   { label: "Answered", value: "answered" },
 ];
 
+const clientIdKey = "workshop-qa-client-id";
+
+function getClientId() {
+  const existingId = window.localStorage.getItem(clientIdKey);
+
+  if (existingId) {
+    return existingId;
+  }
+
+  const nextId = crypto.randomUUID();
+  window.localStorage.setItem(clientIdKey, nextId);
+  return nextId;
+}
+
+function formatTimeAgo(value: string) {
+  const created = new Date(value).getTime();
+  const seconds = Math.max(1, Math.floor((Date.now() - created) / 1000));
+
+  if (seconds < 60) {
+    return "just now";
+  }
+
+  const minutes = Math.floor(seconds / 60);
+
+  if (minutes < 60) {
+    return `${minutes} min ago`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours} hr ago`;
+  }
+
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
 export default function Home() {
-  const [questions, setQuestions] = useState(initialQuestions);
+  const supabase = useMemo(() => createClient(), []);
+  const clientIdRef = useRef("");
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [filter, setFilter] = useState<Filter>("top");
   const [body, setBody] = useState("");
   const [author, setAuthor] = useState("");
-  const [votedIds, setVotedIds] = useState<number[]>([2]);
+  const [votedIds, setVotedIds] = useState<number[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const loadQuestions = useCallback(
+    async (currentClientId: string) => {
+      setErrorMessage("");
+
+      const [
+        { data: questionRows, error: questionsError },
+        { data: voteRows, error: votesError },
+      ] = await Promise.all([
+        supabase
+          .from("questions")
+          .select("id, body, author, topic, created_at, answered_at")
+          .order("created_at", { ascending: false }),
+        supabase.from("votes").select("question_id, client_id"),
+      ]);
+
+      if (questionsError || votesError) {
+        setErrorMessage(
+          questionsError?.message ??
+            votesError?.message ??
+            "Could not load questions.",
+        );
+        setQuestions([]);
+        setVotedIds([]);
+        setIsLoading(false);
+        return;
+      }
+
+      const votesByQuestion = new Map<number, number>();
+      const myVotes = new Set<number>();
+
+      for (const vote of (voteRows ?? []) as VoteRow[]) {
+        votesByQuestion.set(
+          vote.question_id,
+          (votesByQuestion.get(vote.question_id) ?? 0) + 1,
+        );
+
+        if (vote.client_id === currentClientId) {
+          myVotes.add(vote.question_id);
+        }
+      }
+
+      setQuestions(
+        ((questionRows ?? []) as QuestionRow[]).map((question) => ({
+          id: question.id,
+          body: question.body,
+          author: question.author,
+          topic: question.topic,
+          votes: votesByQuestion.get(question.id) ?? 0,
+          createdAt: formatTimeAgo(question.created_at),
+          answered: Boolean(question.answered_at),
+          mine: myVotes.has(question.id),
+        })),
+      );
+      setVotedIds([...myVotes]);
+      setIsLoading(false);
+    },
+    [supabase],
+  );
+
+  useEffect(() => {
+    const currentClientId = getClientId();
+    clientIdRef.current = currentClientId;
+    queueMicrotask(() => void loadQuestions(currentClientId));
+
+    const channel = supabase
+      .channel("qa-board")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "questions" },
+        () => void loadQuestions(currentClientId),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "votes" },
+        () => void loadQuestions(currentClientId),
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadQuestions, supabase]);
 
   const visibleQuestions = useMemo(() => {
     const filtered =
@@ -104,66 +195,101 @@ export default function Home() {
   const openQuestions = questions.filter((question) => !question.answered).length;
   const answeredQuestions = questions.length - openQuestions;
 
-  function submitQuestion(event: FormEvent<HTMLFormElement>) {
+  async function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const trimmedBody = body.trim();
     const trimmedAuthor = author.trim();
 
-    if (!trimmedBody) {
+    const currentClientId = clientIdRef.current;
+
+    if (!trimmedBody || !currentClientId) {
       return;
     }
 
-    const nextQuestion: Question = {
-      id: Date.now(),
-      body: trimmedBody,
-      author: trimmedAuthor || "Anonymous",
-      topic: "Audience",
-      votes: 1,
-      createdAt: "just now",
-      answered: false,
-      mine: true,
-    };
+    setIsSubmitting(true);
+    setErrorMessage("");
 
-    setQuestions((currentQuestions) => [nextQuestion, ...currentQuestions]);
-    setVotedIds((currentIds) => [...currentIds, nextQuestion.id]);
+    const { data: insertedQuestion, error: insertError } = await supabase
+      .from("questions")
+      .insert({
+        body: trimmedBody,
+        author: trimmedAuthor || "Anonymous",
+        topic: "Audience",
+      })
+      .select("id")
+      .single();
+
+    if (insertError) {
+      setErrorMessage(insertError.message);
+      setIsSubmitting(false);
+      return;
+    }
+
+    await supabase.from("votes").insert({
+      question_id: insertedQuestion.id,
+      client_id: currentClientId,
+    });
+
     setBody("");
     setAuthor("");
     setFilter("new");
+    setIsSubmitting(false);
+    await loadQuestions(currentClientId);
   }
 
-  function toggleVote(id: number) {
+  async function toggleVote(id: number) {
+    const currentClientId = clientIdRef.current;
+
+    if (!currentClientId) {
+      return;
+    }
+
     const hasVoted = votedIds.includes(id);
+    setErrorMessage("");
 
-    setQuestions((currentQuestions) =>
-      currentQuestions.map((question) =>
-        question.id === id
-          ? {
-              ...question,
-              votes: question.votes + (hasVoted ? -1 : 1),
-            }
-          : question,
-      ),
-    );
+    const { error } = hasVoted
+      ? await supabase
+          .from("votes")
+          .delete()
+          .eq("question_id", id)
+          .eq("client_id", currentClientId)
+      : await supabase.from("votes").insert({
+          question_id: id,
+          client_id: currentClientId,
+        });
 
-    setVotedIds((currentIds) =>
-      hasVoted
-        ? currentIds.filter((currentId) => currentId !== id)
-        : [...currentIds, id],
-    );
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    await loadQuestions(currentClientId);
   }
 
-  function toggleAnswered(id: number) {
-    setQuestions((currentQuestions) =>
-      currentQuestions.map((question) =>
-        question.id === id
-          ? {
-              ...question,
-              answered: !question.answered,
-            }
-          : question,
-      ),
-    );
+  async function toggleAnswered(id: number) {
+    const question = questions.find((currentQuestion) => currentQuestion.id === id);
+    const currentClientId = clientIdRef.current;
+
+    if (!question || !currentClientId) {
+      return;
+    }
+
+    setErrorMessage("");
+
+    const { error } = await supabase
+      .from("questions")
+      .update({
+        answered_at: question.answered ? null : new Date().toISOString(),
+      })
+      .eq("id", id);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    await loadQuestions(currentClientId);
   }
 
   return (
@@ -196,11 +322,11 @@ export default function Home() {
                 <div>
                   <h2 className="text-lg font-semibold">Ask a question</h2>
                   <p className="mt-1 text-sm leading-6 text-[#617066]">
-                    Dummy data today. Supabase inserts later.
+                    Connected to Supabase. New questions sync live.
                   </p>
                 </div>
                 <span className="border border-[#b7d9c1] bg-[#edf8f0] px-2 py-1 text-xs font-semibold text-[#27643a]">
-                  Live-ready
+                  Realtime
                 </span>
               </div>
 
@@ -217,7 +343,7 @@ export default function Home() {
               />
               <div className="mt-2 flex items-center justify-between text-xs text-[#6b766e]">
                 <span>{body.length}/220</span>
-                <span>Shows instantly in the board</span>
+                <span>Stored in Supabase</span>
               </div>
 
               <label className="mt-4 block text-sm font-medium" htmlFor="author">
@@ -235,9 +361,9 @@ export default function Home() {
               <button
                 type="submit"
                 className="mt-5 flex h-11 w-full items-center justify-center bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e] disabled:cursor-not-allowed disabled:bg-[#9aa49d]"
-                disabled={!body.trim()}
+                disabled={!body.trim() || isSubmitting}
               >
-                Submit question
+                {isSubmitting ? "Submitting..." : "Submit question"}
               </button>
             </form>
 
@@ -254,11 +380,13 @@ export default function Home() {
                 </div>
                 <div className="flex items-center justify-between border-b border-white/15 pb-3">
                   <span>Audience pace</span>
-                  <strong className="text-white">Active</strong>
+                  <strong className="text-white">
+                    {openQuestions > 0 ? "Active" : "Quiet"}
+                  </strong>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Demo stage</span>
-                  <strong className="text-white">UI prototype</strong>
+                  <span>Data source</span>
+                  <strong className="text-white">Supabase</strong>
                 </div>
               </div>
             </section>
@@ -269,7 +397,7 @@ export default function Home() {
               <div>
                 <h2 className="text-xl font-semibold">Questions</h2>
                 <p className="mt-1 text-sm text-[#617066]">
-                  Vote, sort, and mark answered. State is local for this first pass.
+                  Vote, sort, and mark answered. Changes sync through realtime.
                 </p>
               </div>
 
@@ -291,7 +419,25 @@ export default function Home() {
               </div>
             </div>
 
+            {errorMessage ? (
+              <div className="mt-4 border border-[#e4b5aa] bg-[#fff4f1] p-4 text-sm font-medium text-[#9b3c33]">
+                {errorMessage}
+              </div>
+            ) : null}
+
             <div className="mt-4 space-y-3">
+              {isLoading ? (
+                <div className="border border-[#d8d0c2] bg-white p-8 text-center text-sm font-medium text-[#617066] shadow-sm">
+                  Loading questions from Supabase...
+                </div>
+              ) : null}
+
+              {!isLoading && visibleQuestions.length === 0 ? (
+                <div className="border border-[#d8d0c2] bg-white p-8 text-center text-sm font-medium text-[#617066] shadow-sm">
+                  No questions in this view yet.
+                </div>
+              ) : null}
+
               {visibleQuestions.map((question) => (
                 <article
                   key={question.id}
@@ -303,7 +449,7 @@ export default function Home() {
                 >
                   <button
                     type="button"
-                    onClick={() => toggleVote(question.id)}
+                    onClick={() => void toggleVote(question.id)}
                     className={`flex h-20 w-full flex-col items-center justify-center border text-sm font-semibold transition sm:w-[72px] ${
                       votedIds.includes(question.id)
                         ? "border-[#2f6f5e] bg-[#e4f4ed] text-[#174f40]"
@@ -327,7 +473,7 @@ export default function Home() {
                       ) : null}
                       {question.mine ? (
                         <span className="bg-[#f8e2df] px-2 py-1 text-xs font-semibold text-[#9b3c33]">
-                          Yours
+                          Voted
                         </span>
                       ) : null}
                     </div>
@@ -342,7 +488,7 @@ export default function Home() {
 
                   <button
                     type="button"
-                    onClick={() => toggleAnswered(question.id)}
+                    onClick={() => void toggleAnswered(question.id)}
                     className={`h-10 whitespace-nowrap border px-3 text-sm font-semibold transition ${
                       question.answered
                         ? "border-[#b8c3d8] bg-[#f3f6fb] text-[#344f85] hover:bg-white"
