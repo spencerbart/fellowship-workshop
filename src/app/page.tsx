@@ -1,13 +1,7 @@
 "use client";
 
-import {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import type { User } from "@supabase/supabase-js";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 type QuestionRow = {
@@ -21,7 +15,7 @@ type QuestionRow = {
 
 type VoteRow = {
   question_id: number;
-  client_id: string;
+  user_id: string | null;
 };
 
 type Question = {
@@ -36,26 +30,13 @@ type Question = {
 };
 
 type Filter = "top" | "new" | "answered";
+type AuthMode = "sign-in" | "sign-up";
 
 const filters: { label: string; value: Filter }[] = [
   { label: "Top", value: "top" },
   { label: "New", value: "new" },
   { label: "Answered", value: "answered" },
 ];
-
-const clientIdKey = "workshop-qa-client-id";
-
-function getClientId() {
-  const existingId = window.localStorage.getItem(clientIdKey);
-
-  if (existingId) {
-    return existingId;
-  }
-
-  const nextId = crypto.randomUUID();
-  window.localStorage.setItem(clientIdKey, nextId);
-  return nextId;
-}
 
 function formatTimeAgo(value: string) {
   const created = new Date(value).getTime();
@@ -81,20 +62,48 @@ function formatTimeAgo(value: string) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+function defaultAuthor(user: User | null) {
+  return user?.email?.split("@")[0] ?? "Anonymous";
+}
+
 export default function Home() {
   const supabase = useMemo(() => createClient(), []);
-  const clientIdRef = useRef("");
+  const [user, setUser] = useState<User | null>(null);
+  const [isModerator, setIsModerator] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>("sign-in");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [filter, setFilter] = useState<Filter>("top");
   const [body, setBody] = useState("");
   const [author, setAuthor] = useState("");
   const [votedIds, setVotedIds] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+
+  const loadModeratorStatus = useCallback(
+    async (currentUser: User | null) => {
+      if (!currentUser) {
+        setIsModerator(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("moderators")
+        .select("user_id")
+        .eq("user_id", currentUser.id)
+        .maybeSingle();
+
+      setIsModerator(!error && Boolean(data));
+    },
+    [supabase],
+  );
 
   const loadQuestions = useCallback(
-    async (currentClientId: string) => {
+    async (currentUser: User | null) => {
       setErrorMessage("");
 
       const [
@@ -105,7 +114,7 @@ export default function Home() {
           .from("questions")
           .select("id, body, author, topic, created_at, answered_at")
           .order("created_at", { ascending: false }),
-        supabase.from("votes").select("question_id, client_id"),
+        supabase.from("votes").select("question_id, user_id"),
       ]);
 
       if (questionsError || votesError) {
@@ -129,7 +138,7 @@ export default function Home() {
           (votesByQuestion.get(vote.question_id) ?? 0) + 1,
         );
 
-        if (vote.client_id === currentClientId) {
+        if (currentUser && vote.user_id === currentUser.id) {
           myVotes.add(vote.question_id);
         }
       }
@@ -153,28 +162,55 @@ export default function Home() {
   );
 
   useEffect(() => {
-    const currentClientId = getClientId();
-    clientIdRef.current = currentClientId;
-    queueMicrotask(() => void loadQuestions(currentClientId));
+    let activeUser: User | null = null;
+
+    queueMicrotask(async () => {
+      const { data } = await supabase.auth.getUser();
+      activeUser = data.user;
+      setUser(data.user);
+      setIsAuthLoading(false);
+      await Promise.all([
+        loadQuestions(data.user),
+        loadModeratorStatus(data.user),
+      ]);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        activeUser = session?.user ?? null;
+        setUser(activeUser);
+        setAuthMessage("");
+        queueMicrotask(() => {
+          void loadQuestions(activeUser);
+          void loadModeratorStatus(activeUser);
+        });
+      },
+    );
 
     const channel = supabase
       .channel("qa-board")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "questions" },
-        () => void loadQuestions(currentClientId),
+        () => void loadQuestions(activeUser),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "votes" },
-        () => void loadQuestions(currentClientId),
+        () => void loadQuestions(activeUser),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "moderators" },
+        () => void loadModeratorStatus(activeUser),
       )
       .subscribe();
 
     return () => {
+      listener.subscription.unsubscribe();
       void supabase.removeChannel(channel);
     };
-  }, [loadQuestions, supabase]);
+  }, [loadModeratorStatus, loadQuestions, supabase]);
 
   const visibleQuestions = useMemo(() => {
     const filtered =
@@ -195,15 +231,49 @@ export default function Home() {
   const openQuestions = questions.filter((question) => !question.answered).length;
   const answeredQuestions = questions.length - openQuestions;
 
+  async function handleAuth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthMessage("");
+    setErrorMessage("");
+
+    const credentials = {
+      email: email.trim(),
+      password,
+    };
+
+    const { error } =
+      authMode === "sign-in"
+        ? await supabase.auth.signInWithPassword(credentials)
+        : await supabase.auth.signUp(credentials);
+
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+
+    setPassword("");
+    setAuthMessage(
+      authMode === "sign-up"
+        ? "Check your email if confirmation is enabled, then sign in."
+        : "Signed in.",
+    );
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    setUser(null);
+    setIsModerator(false);
+    setVotedIds([]);
+  }
+
   async function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const trimmedBody = body.trim();
     const trimmedAuthor = author.trim();
 
-    const currentClientId = clientIdRef.current;
-
-    if (!trimmedBody || !currentClientId) {
+    if (!trimmedBody || !user) {
+      setErrorMessage("Sign in before submitting a question.");
       return;
     }
 
@@ -214,8 +284,9 @@ export default function Home() {
       .from("questions")
       .insert({
         body: trimmedBody,
-        author: trimmedAuthor || "Anonymous",
+        author: trimmedAuthor || defaultAuthor(user),
         topic: "Audience",
+        user_id: user.id,
       })
       .select("id")
       .single();
@@ -228,20 +299,20 @@ export default function Home() {
 
     await supabase.from("votes").insert({
       question_id: insertedQuestion.id,
-      client_id: currentClientId,
+      client_id: user.id,
+      user_id: user.id,
     });
 
     setBody("");
     setAuthor("");
     setFilter("new");
     setIsSubmitting(false);
-    await loadQuestions(currentClientId);
+    await loadQuestions(user);
   }
 
   async function toggleVote(id: number) {
-    const currentClientId = clientIdRef.current;
-
-    if (!currentClientId) {
+    if (!user) {
+      setErrorMessage("Sign in before voting.");
       return;
     }
 
@@ -253,10 +324,11 @@ export default function Home() {
           .from("votes")
           .delete()
           .eq("question_id", id)
-          .eq("client_id", currentClientId)
+          .eq("user_id", user.id)
       : await supabase.from("votes").insert({
           question_id: id,
-          client_id: currentClientId,
+          client_id: user.id,
+          user_id: user.id,
         });
 
     if (error) {
@@ -264,14 +336,14 @@ export default function Home() {
       return;
     }
 
-    await loadQuestions(currentClientId);
+    await loadQuestions(user);
   }
 
   async function toggleAnswered(id: number) {
     const question = questions.find((currentQuestion) => currentQuestion.id === id);
-    const currentClientId = clientIdRef.current;
 
-    if (!question || !currentClientId) {
+    if (!question || !isModerator) {
+      setErrorMessage("Only moderators can mark questions answered.");
       return;
     }
 
@@ -289,7 +361,7 @@ export default function Home() {
       return;
     }
 
-    await loadQuestions(currentClientId);
+    await loadQuestions(user);
   }
 
   return (
@@ -314,6 +386,97 @@ export default function Home() {
 
         <div className="grid flex-1 gap-6 lg:grid-cols-[390px_minmax(0,1fr)]">
           <aside className="space-y-5 lg:sticky lg:top-5 lg:self-start">
+            <section className="border border-[#d8d0c2] bg-white p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold">Account</h2>
+                  <p className="mt-1 text-sm leading-6 text-[#617066]">
+                    Sign in to submit questions and vote.
+                  </p>
+                </div>
+                {isModerator ? (
+                  <span className="border border-[#b8c3d8] bg-[#f3f6fb] px-2 py-1 text-xs font-semibold text-[#344f85]">
+                    Moderator
+                  </span>
+                ) : null}
+              </div>
+
+              {user ? (
+                <div className="mt-4">
+                  <p className="break-all text-sm font-semibold text-[#17201b]">
+                    {user.email}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void signOut()}
+                    className="mt-4 h-10 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-sm font-semibold text-[#415049] transition hover:border-[#2f6f5e] hover:text-[#174f40]"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleAuth} className="mt-4">
+                  <div className="grid grid-cols-2 border border-[#cfc6b7] bg-[#f6f3ee] p-1">
+                    {(["sign-in", "sign-up"] as AuthMode[]).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setAuthMode(mode)}
+                        className={`h-9 px-3 text-sm font-semibold transition ${
+                          authMode === mode
+                            ? "bg-white text-[#17201b] shadow-sm"
+                            : "text-[#617066] hover:text-[#17201b]"
+                        }`}
+                      >
+                        {mode === "sign-in" ? "Sign in" : "Create account"}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label className="mt-4 block text-sm font-medium" htmlFor="email">
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce]"
+                    required
+                  />
+
+                  <label
+                    className="mt-4 block text-sm font-medium"
+                    htmlFor="password"
+                  >
+                    Password
+                  </label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce]"
+                    minLength={6}
+                    required
+                  />
+
+                  {authMessage ? (
+                    <p className="mt-3 text-sm font-medium text-[#9b3c33]">
+                      {authMessage}
+                    </p>
+                  ) : null}
+
+                  <button
+                    type="submit"
+                    className="mt-5 flex h-11 w-full items-center justify-center bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e]"
+                  >
+                    {authMode === "sign-in" ? "Sign in" : "Create account"}
+                  </button>
+                </form>
+              )}
+            </section>
+
             <form
               onSubmit={submitQuestion}
               className="border border-[#d8d0c2] bg-white p-5 shadow-sm"
@@ -322,7 +485,7 @@ export default function Home() {
                 <div>
                   <h2 className="text-lg font-semibold">Ask a question</h2>
                   <p className="mt-1 text-sm leading-6 text-[#617066]">
-                    Connected to Supabase. New questions sync live.
+                    Authenticated submissions sync live.
                   </p>
                 </div>
                 <span className="border border-[#b7d9c1] bg-[#edf8f0] px-2 py-1 text-xs font-semibold text-[#27643a]">
@@ -337,9 +500,14 @@ export default function Home() {
                 id="question"
                 value={body}
                 onChange={(event) => setBody(event.target.value)}
-                placeholder="What do you want the presenter to explain?"
-                className="mt-2 min-h-36 w-full resize-none border border-[#cfc6b7] bg-[#fffdf8] px-3 py-3 text-base leading-6 outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce]"
+                placeholder={
+                  user
+                    ? "What do you want the presenter to explain?"
+                    : "Sign in to submit a question."
+                }
+                className="mt-2 min-h-36 w-full resize-none border border-[#cfc6b7] bg-[#fffdf8] px-3 py-3 text-base leading-6 outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce] disabled:bg-[#f3f0ea]"
                 maxLength={220}
+                disabled={!user || isAuthLoading}
               />
               <div className="mt-2 flex items-center justify-between text-xs text-[#6b766e]">
                 <span>{body.length}/220</span>
@@ -347,21 +515,22 @@ export default function Home() {
               </div>
 
               <label className="mt-4 block text-sm font-medium" htmlFor="author">
-                Name
+                Display name
               </label>
               <input
                 id="author"
                 value={author}
                 onChange={(event) => setAuthor(event.target.value)}
-                placeholder="Anonymous"
-                className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce]"
+                placeholder={defaultAuthor(user)}
+                className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce] disabled:bg-[#f3f0ea]"
                 maxLength={28}
+                disabled={!user || isAuthLoading}
               />
 
               <button
                 type="submit"
                 className="mt-5 flex h-11 w-full items-center justify-center bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e] disabled:cursor-not-allowed disabled:bg-[#9aa49d]"
-                disabled={!body.trim() || isSubmitting}
+                disabled={!user || !body.trim() || isSubmitting}
               >
                 {isSubmitting ? "Submitting..." : "Submit question"}
               </button>
@@ -385,8 +554,10 @@ export default function Home() {
                   </strong>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Data source</span>
-                  <strong className="text-white">Supabase</strong>
+                  <span>Answer controls</span>
+                  <strong className="text-white">
+                    {isModerator ? "Unlocked" : "Moderator only"}
+                  </strong>
                 </div>
               </div>
             </section>
@@ -397,7 +568,7 @@ export default function Home() {
               <div>
                 <h2 className="text-xl font-semibold">Questions</h2>
                 <p className="mt-1 text-sm text-[#617066]">
-                  Vote, sort, and mark answered. Changes sync through realtime.
+                  Signed-in users can vote. Moderators can mark answers.
                 </p>
               </div>
 
@@ -450,10 +621,11 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => void toggleVote(question.id)}
-                    className={`flex h-20 w-full flex-col items-center justify-center border text-sm font-semibold transition sm:w-[72px] ${
+                    disabled={!user}
+                    className={`flex h-20 w-full flex-col items-center justify-center border text-sm font-semibold transition disabled:cursor-not-allowed sm:w-[72px] ${
                       votedIds.includes(question.id)
                         ? "border-[#2f6f5e] bg-[#e4f4ed] text-[#174f40]"
-                        : "border-[#d8d0c2] bg-[#fffdf8] text-[#415049] hover:border-[#2f6f5e]"
+                        : "border-[#d8d0c2] bg-[#fffdf8] text-[#415049] hover:border-[#2f6f5e] disabled:bg-[#f3f0ea]"
                     }`}
                     aria-label={`Vote for question by ${question.author}`}
                   >
@@ -486,17 +658,19 @@ export default function Home() {
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => void toggleAnswered(question.id)}
-                    className={`h-10 whitespace-nowrap border px-3 text-sm font-semibold transition ${
-                      question.answered
-                        ? "border-[#b8c3d8] bg-[#f3f6fb] text-[#344f85] hover:bg-white"
-                        : "border-[#cfc6b7] bg-[#fffdf8] text-[#415049] hover:border-[#2f6f5e] hover:text-[#174f40]"
-                    }`}
-                  >
-                    {question.answered ? "Reopen" : "Mark answered"}
-                  </button>
+                  {isModerator ? (
+                    <button
+                      type="button"
+                      onClick={() => void toggleAnswered(question.id)}
+                      className={`h-10 whitespace-nowrap border px-3 text-sm font-semibold transition ${
+                        question.answered
+                          ? "border-[#b8c3d8] bg-[#f3f6fb] text-[#344f85] hover:bg-white"
+                          : "border-[#cfc6b7] bg-[#fffdf8] text-[#415049] hover:border-[#2f6f5e] hover:text-[#174f40]"
+                      }`}
+                    >
+                      {question.answered ? "Reopen" : "Mark answered"}
+                    </button>
+                  ) : null}
                 </article>
               ))}
             </div>

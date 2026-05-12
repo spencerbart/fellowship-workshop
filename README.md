@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Live Q&A Board
 
-## Getting Started
+A Next.js and Supabase workshop app for collecting audience questions, voting,
+and marking questions answered in realtime.
 
-First, run the development server:
+## Local Setup
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Copy the environment template:
+
+```bash
+cp .env.example .env.local
+```
+
+Fill in the Supabase values:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key_here
+```
+
+Create or update the Supabase tables and policies by running
+[`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor.
+
+The app uses Supabase Auth. In the Supabase dashboard, make sure email/password
+auth is enabled under Authentication settings.
+
+After a presenter signs up, promote that user to moderator from the SQL Editor:
+
+```sql
+insert into public.moderators (user_id)
+select id from auth.users where email = 'presenter@example.com';
+```
+
+Only moderators can mark questions answered or reopen them. Row-level security
+enforces this in the database.
+
+Start the dev server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Add these environment variables in Vercel before deploying:
 
-## Learn More
+```bash
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+```
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Set them for Production, Preview, and Development if you want every deployment
+type to connect to Supabase.
