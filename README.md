@@ -1,7 +1,7 @@
 # Live Q&A Board
 
 A Next.js and Supabase workshop app for collecting audience questions, voting,
-and marking questions answered in realtime.
+running room-specific Q&A boards, and presenting the top question live.
 
 ## Local Setup
 
@@ -47,6 +47,29 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+The home page redirects to the default room:
+
+```txt
+/rooms/main
+```
+
+Create additional rooms by changing the slug:
+
+```txt
+/rooms/frontend
+/rooms/database
+/rooms/workshop-day-1
+```
+
+Presenter mode is available per room:
+
+```txt
+/rooms/main/presenter
+```
+
+Presenter mode shows the top unanswered question, moderator controls, queue
+stats, and a QR code for the audience room link.
 
 ## Vercel
 
