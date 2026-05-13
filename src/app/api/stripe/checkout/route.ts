@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { createAdminClient, getUserFromRequest } from "@/lib/supabase/admin";
+import { getBillingOrganization } from "@/lib/organizations";
+import { getBearerToken, getUserFromRequest } from "@/lib/supabase/admin";
+import { createUserRequestClient } from "@/lib/supabase/server";
 import { createStripeClient, ownerPlan } from "@/lib/stripe";
 
 export async function POST(request: Request) {
+  const token = getBearerToken(request);
   const { user, error: authError } = await getUserFromRequest(request);
 
-  if (!user) {
+  if (!token || !user) {
     return NextResponse.json({ error: authError }, { status: 401 });
   }
 
@@ -15,16 +18,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing organization." }, { status: 400 });
   }
 
-  const supabase = createAdminClient();
-  const { data: membership, error: membershipError } = await supabase
-    .from("organization_members")
-    .select("role, organizations(stripe_customer_id)")
-    .eq("org_id", orgId)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const supabase = createUserRequestClient(token);
+  const { membership, organization, error } = await getBillingOrganization(
+    supabase,
+    orgId,
+  );
 
-  if (membershipError || !membership) {
-    return NextResponse.json({ error: "Organization not found." }, { status: 404 });
+  if (error || !membership || !organization) {
+    return NextResponse.json(
+      { error: error ?? "Organization not found." },
+      { status: 404 },
+    );
   }
 
   if (membership.role !== "owner") {
@@ -33,9 +37,6 @@ export async function POST(request: Request) {
 
   const origin = request.headers.get("origin") ?? new URL(request.url).origin;
   const stripe = createStripeClient();
-  const organization = Array.isArray(membership.organizations)
-    ? membership.organizations[0]
-    : membership.organizations;
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",

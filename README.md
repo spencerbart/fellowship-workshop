@@ -22,7 +22,7 @@ Fill in the Supabase values:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key_here
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
+SUPABASE_SECRET_KEY=sb_secret_your_server_only_key_here
 ```
 
 Fill in the Stripe values:

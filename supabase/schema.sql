@@ -355,6 +355,27 @@ as $$
   order by organizations.created_at desc;
 $$;
 
+create or replace function public.get_billing_organization(requested_org_id uuid)
+returns table (
+  role text,
+  stripe_customer_id text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    organization_members.role,
+    organizations.stripe_customer_id
+  from public.organization_members
+  join public.organizations
+    on organizations.id = organization_members.org_id
+  where organization_members.org_id = requested_org_id
+    and organization_members.user_id = auth.uid()
+  limit 1;
+$$;
+
 create or replace function public.list_my_org_members(requested_org_id uuid)
 returns table (
   user_id uuid,
@@ -410,6 +431,7 @@ alter table public.organization_members enable row level security;
 alter table public.org_subscriptions enable row level security;
 
 grant usage on schema public to anon, authenticated;
+grant usage on schema public to service_role;
 grant select on public.rooms to anon, authenticated;
 grant insert, update on public.rooms to anon, authenticated;
 grant select on public.questions to anon, authenticated;
@@ -420,6 +442,9 @@ grant select on public.moderators to authenticated;
 grant select, update on public.organizations to authenticated;
 grant select on public.organization_members to authenticated;
 grant select on public.org_subscriptions to authenticated;
+grant select, insert, update, delete on public.organizations to service_role;
+grant select, insert, update, delete on public.organization_members to service_role;
+grant select, insert, update, delete on public.org_subscriptions to service_role;
 grant execute on function public.can_manage_room(text) to authenticated;
 grant execute on function public.create_organization(text) to authenticated;
 grant execute on function public.add_org_admin(uuid, text) to authenticated;
@@ -427,6 +452,7 @@ grant execute on function public.remove_org_admin(uuid, uuid) to authenticated;
 grant execute on function public.create_owned_room(uuid, text, text) to authenticated;
 grant execute on function public.delete_owned_room(uuid, text) to authenticated;
 grant execute on function public.list_my_organizations() to authenticated;
+grant execute on function public.get_billing_organization(uuid) to authenticated;
 grant execute on function public.list_my_org_members(uuid) to authenticated;
 grant execute on function public.list_my_org_rooms(uuid) to authenticated;
 
