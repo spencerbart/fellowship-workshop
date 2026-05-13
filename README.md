@@ -71,6 +71,13 @@ Presenter mode is available per room:
 Presenter mode shows the top unanswered question, moderator controls, queue
 stats, and a QR code for the audience room link.
 
+Moderators can also manage the room from presenter mode:
+
+- Rename the room
+- Lock or unlock new submissions
+- Archive or restore the room
+- Clear answered questions
+
 ## Vercel
 
 Add these environment variables in Vercel before deploying:

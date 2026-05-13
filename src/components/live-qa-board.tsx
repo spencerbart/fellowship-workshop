@@ -16,6 +16,7 @@ const filters: { label: string; value: Filter }[] = [
 export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
   const {
     supabase,
+    room,
     user,
     isModerator,
     questions,
@@ -53,7 +54,8 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
   const totalVotes = questions.reduce((sum, question) => sum + question.votes, 0);
   const openQuestions = questions.filter((question) => !question.answered).length;
   const answeredQuestions = questions.length - openQuestions;
-  const displayRoomTitle = roomTitle(roomSlug) || roomSlug;
+  const displayRoomTitle = room.name || roomTitle(roomSlug) || roomSlug;
+  const submissionsClosed = room.isLocked || Boolean(room.archivedAt);
 
   async function handleAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -95,6 +97,11 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
 
     if (!trimmedBody || !user) {
       setErrorMessage("Sign in before submitting a question.");
+      return;
+    }
+
+    if (submissionsClosed) {
+      setErrorMessage("This room is not accepting new questions.");
       return;
     }
 
@@ -238,6 +245,14 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
                 </span>
               </div>
 
+              {submissionsClosed ? (
+                <div className="mt-4 border border-[#e4b5aa] bg-[#fff4f1] p-3 text-sm font-medium text-[#9b3c33]">
+                  {room.archivedAt
+                    ? "This room is archived. New questions are closed."
+                    : "This room is locked. New questions are paused."}
+                </div>
+              ) : null}
+
               <label className="mt-5 block text-sm font-medium" htmlFor="question">
                 Question
               </label>
@@ -252,7 +267,7 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
                 }
                 className="mt-2 min-h-36 w-full resize-none border border-[#cfc6b7] bg-[#fffdf8] px-3 py-3 text-base leading-6 outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce] disabled:bg-[#f3f0ea]"
                 maxLength={220}
-                disabled={!user || isAuthLoading}
+                disabled={!user || isAuthLoading || submissionsClosed}
               />
               <div className="mt-2 flex items-center justify-between text-xs text-[#6b766e]">
                 <span>{body.length}/220</span>
@@ -269,13 +284,13 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
                 placeholder={defaultAuthor(user)}
                 className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce] disabled:bg-[#f3f0ea]"
                 maxLength={28}
-                disabled={!user || isAuthLoading}
+                disabled={!user || isAuthLoading || submissionsClosed}
               />
 
               <button
                 type="submit"
                 className="mt-5 flex h-11 w-full items-center justify-center bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e] disabled:cursor-not-allowed disabled:bg-[#9aa49d]"
-                disabled={!user || !body.trim() || isSubmitting}
+                disabled={!user || !body.trim() || isSubmitting || submissionsClosed}
               >
                 {isSubmitting ? "Submitting..." : "Submit question"}
               </button>

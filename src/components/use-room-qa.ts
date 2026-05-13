@@ -7,12 +7,19 @@ import {
   formatTimeAgo,
   Question,
   QuestionRow,
+  Room,
   roomTitle,
   VoteRow,
 } from "./qa-types";
 
 export function useRoomQa(roomSlug: string) {
   const supabase = useMemo(() => createClient(), []);
+  const [room, setRoom] = useState<Room>({
+    slug: roomSlug,
+    name: roomTitle(roomSlug) || roomSlug,
+    isLocked: false,
+    archivedAt: null,
+  });
   const [user, setUser] = useState<User | null>(null);
   const [isModerator, setIsModerator] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -27,8 +34,27 @@ export function useRoomQa(roomSlug: string) {
         slug: roomSlug,
         name: roomTitle(roomSlug) || roomSlug,
       },
-      { onConflict: "slug" },
+      { ignoreDuplicates: true, onConflict: "slug" },
     );
+  }, [roomSlug, supabase]);
+
+  const loadRoom = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("rooms")
+      .select("slug, name, is_locked, archived_at")
+      .eq("slug", roomSlug)
+      .maybeSingle();
+
+    if (error || !data) {
+      return;
+    }
+
+    setRoom({
+      slug: data.slug,
+      name: data.name,
+      isLocked: Boolean(data.is_locked),
+      archivedAt: data.archived_at,
+    });
   }, [roomSlug, supabase]);
 
   const loadModeratorStatus = useCallback(
@@ -121,6 +147,7 @@ export function useRoomQa(roomSlug: string) {
 
     queueMicrotask(async () => {
       await ensureRoom();
+      await loadRoom();
       const { data } = await supabase.auth.getUser();
       activeUser = data.user;
       setUser(data.user);
@@ -149,6 +176,16 @@ export function useRoomQa(roomSlug: string) {
         {
           event: "*",
           schema: "public",
+          table: "rooms",
+          filter: `slug=eq.${roomSlug}`,
+        },
+        () => void loadRoom(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
           table: "questions",
           filter: `room_slug=eq.${roomSlug}`,
         },
@@ -172,6 +209,7 @@ export function useRoomQa(roomSlug: string) {
     };
   }, [
     ensureRoom,
+    loadRoom,
     loadModeratorStatus,
     loadQuestions,
     roomSlug,
@@ -180,6 +218,7 @@ export function useRoomQa(roomSlug: string) {
 
   return {
     supabase,
+    room,
     user,
     isModerator,
     questions,
@@ -188,6 +227,7 @@ export function useRoomQa(roomSlug: string) {
     isAuthLoading,
     errorMessage,
     setErrorMessage,
+    loadRoom,
     loadQuestions,
   };
 }

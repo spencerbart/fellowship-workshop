@@ -8,12 +8,14 @@ import { useRoomQa } from "./use-room-qa";
 export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
   const {
     supabase,
+    room,
     user,
     isModerator,
     questions,
     isLoading,
     errorMessage,
     setErrorMessage,
+    loadRoom,
     loadQuestions,
   } = useRoomQa(roomSlug);
   const [authMode, setAuthMode] = useState<AuthMode>("sign-in");
@@ -22,13 +24,15 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
   const [authMessage, setAuthMessage] = useState("");
   const [copied, setCopied] = useState(false);
   const [skippedIds, setSkippedIds] = useState<number[]>([]);
+  const [roomName, setRoomName] = useState("");
+  const [controlMessage, setControlMessage] = useState("");
 
   const audiencePath = `/rooms/${roomSlug}`;
   const audienceUrl =
     typeof window === "undefined"
       ? audiencePath
       : `${window.location.origin}${audiencePath}`;
-  const displayRoomTitle = roomTitle(roomSlug) || roomSlug;
+  const displayRoomTitle = room.name || roomTitle(roomSlug) || roomSlug;
   const openQuestions = questions
     .filter((question) => !question.answered)
     .sort((a, b) => b.votes - a.votes);
@@ -115,6 +119,101 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
     setSkippedIds((currentIds) =>
       currentIds.filter((id) => id !== currentQuestion.id),
     );
+    await loadQuestions(user);
+  }
+
+  async function renameRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const nextName = roomName.trim();
+
+    if (!isModerator) {
+      setControlMessage("Only moderators can rename rooms.");
+      return;
+    }
+
+    if (!nextName) {
+      setControlMessage("Enter a room name first.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("rooms")
+      .update({ name: nextName })
+      .eq("slug", roomSlug);
+
+    if (error) {
+      setControlMessage(error.message);
+      return;
+    }
+
+    setRoomName("");
+    setControlMessage("Room renamed.");
+    await loadRoom();
+  }
+
+  async function toggleRoomLock() {
+    if (!isModerator) {
+      setControlMessage("Only moderators can lock rooms.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("rooms")
+      .update({ is_locked: !room.isLocked })
+      .eq("slug", roomSlug);
+
+    if (error) {
+      setControlMessage(error.message);
+      return;
+    }
+
+    setControlMessage(room.isLocked ? "Submissions unlocked." : "Submissions locked.");
+    await loadRoom();
+  }
+
+  async function toggleRoomArchive() {
+    if (!isModerator) {
+      setControlMessage("Only moderators can archive rooms.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("rooms")
+      .update({
+        archived_at: room.archivedAt ? null : new Date().toISOString(),
+        is_locked: room.archivedAt ? room.isLocked : true,
+      })
+      .eq("slug", roomSlug);
+
+    if (error) {
+      setControlMessage(error.message);
+      return;
+    }
+
+    setControlMessage(room.archivedAt ? "Room restored." : "Room archived.");
+    await loadRoom();
+  }
+
+  async function clearAnsweredQuestions() {
+    if (!isModerator) {
+      setControlMessage("Only moderators can clear answered questions.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("questions")
+      .delete()
+      .eq("room_slug", roomSlug)
+      .not("answered_at", "is", null);
+
+    if (error) {
+      setControlMessage(error.message);
+      return;
+    }
+
+    setSkippedIds([]);
+    setControlMessage("Answered questions cleared.");
     await loadQuestions(user);
   }
 
@@ -230,6 +329,81 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
               <p className="mt-3 break-all text-sm font-medium text-[#617066]">
                 {audienceUrl}
               </p>
+            </section>
+
+            <section className="border border-white/15 bg-[#17201b] p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">
+                    Room controls
+                  </h2>
+                  <p className="mt-1 text-sm text-[#dbe5de]">
+                    Moderator-only settings
+                  </p>
+                </div>
+                <span className="border border-white/20 px-2 py-1 text-xs font-semibold text-[#dbe5de]">
+                  {room.archivedAt
+                    ? "Archived"
+                    : room.isLocked
+                      ? "Locked"
+                      : "Open"}
+                </span>
+              </div>
+
+              <form onSubmit={renameRoom} className="mt-4">
+                <label className="block text-sm font-medium text-[#f6f3ee]">
+                  Room name
+                </label>
+                <input
+                  value={roomName}
+                  onChange={(event) => setRoomName(event.target.value)}
+                  placeholder={displayRoomTitle}
+                  className="mt-2 h-10 w-full border border-white/20 bg-[#111814] px-3 text-sm text-white outline-none transition placeholder:text-[#aeb8b1] focus:border-[#e6a08d] disabled:bg-white/5"
+                  maxLength={48}
+                  disabled={!isModerator}
+                />
+                <button
+                  type="submit"
+                  disabled={!isModerator || !roomName.trim()}
+                  className="mt-3 h-10 w-full bg-white px-3 text-sm font-semibold text-[#17201b] transition hover:bg-[#f6f3ee] disabled:cursor-not-allowed disabled:bg-white/30 disabled:text-white/60"
+                >
+                  Rename room
+                </button>
+              </form>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => void toggleRoomLock()}
+                  disabled={!isModerator || Boolean(room.archivedAt)}
+                  className="h-10 border border-white/20 px-3 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:text-white/40"
+                >
+                  {room.isLocked ? "Unlock" : "Lock"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void toggleRoomArchive()}
+                  disabled={!isModerator}
+                  className="h-10 border border-white/20 px-3 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:text-white/40"
+                >
+                  {room.archivedAt ? "Restore" : "Archive"}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void clearAnsweredQuestions()}
+                disabled={!isModerator || answeredQuestions === 0}
+                className="mt-3 h-10 w-full border border-[#e6a08d] px-3 text-sm font-semibold text-[#ffd9d1] transition hover:bg-[#3b211d] disabled:cursor-not-allowed disabled:border-white/15 disabled:text-white/40"
+              >
+                Clear answered questions
+              </button>
+
+              {controlMessage ? (
+                <p className="mt-3 text-sm font-medium text-[#ffd9d1]">
+                  {controlMessage}
+                </p>
+              ) : null}
             </section>
 
             <section className="border border-white/15 bg-[#17201b] p-5 shadow-sm">

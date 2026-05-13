@@ -15,6 +15,13 @@ export type VoteRow = {
   user_id: string | null;
 };
 
+export type Room = {
+  slug: string;
+  name: string;
+  isLocked: boolean;
+  archivedAt: string | null;
+};
+
 export type Question = {
   id: number;
   body: string;
