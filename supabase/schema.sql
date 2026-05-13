@@ -1,3 +1,5 @@
+create extension if not exists pgcrypto;
+
 create table if not exists public.rooms (
   slug text primary key check (slug ~ '^[a-z0-9][a-z0-9-]{0,62}$'),
   name text not null,
@@ -64,10 +66,348 @@ create table if not exists public.moderators (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.organizations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(name) between 1 and 80),
+  owner_user_id uuid not null references auth.users(id) on delete cascade,
+  stripe_customer_id text unique,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.organization_members (
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null check (role in ('owner', 'admin')),
+  created_at timestamptz not null default now(),
+  primary key (org_id, user_id)
+);
+
+create table if not exists public.org_subscriptions (
+  org_id uuid primary key references public.organizations(id) on delete cascade,
+  stripe_customer_id text not null,
+  stripe_subscription_id text unique not null,
+  status text not null,
+  current_period_end timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.rooms
+add column if not exists org_id uuid references public.organizations(id) on delete set null;
+
+create index if not exists rooms_org_id_idx on public.rooms(org_id);
+
+create or replace function public.is_active_org_subscription(requested_org_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.org_subscriptions
+    where org_id = requested_org_id
+      and status in ('active', 'trialing', 'past_due')
+  );
+$$;
+
+create or replace function public.is_org_admin(requested_org_id uuid, requested_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.organization_members
+    where org_id = requested_org_id
+      and user_id = requested_user_id
+      and role in ('owner', 'admin')
+  );
+$$;
+
+create or replace function public.is_org_owner(requested_org_id uuid, requested_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.organization_members
+    where org_id = requested_org_id
+      and user_id = requested_user_id
+      and role = 'owner'
+  );
+$$;
+
+create or replace function public.can_manage_room(requested_room_slug text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    exists (
+      select 1
+      from public.moderators
+      where user_id = auth.uid()
+    )
+    or exists (
+      select 1
+      from public.rooms
+      where slug = requested_room_slug
+        and org_id is not null
+        and public.is_org_admin(org_id, auth.uid())
+        and public.is_active_org_subscription(org_id)
+    );
+$$;
+
+create or replace function public.create_organization(org_name text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  created_org_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in before creating an organization.';
+  end if;
+
+  if length(trim(org_name)) = 0 or length(trim(org_name)) > 80 then
+    raise exception 'Organization name must be 1 to 80 characters.';
+  end if;
+
+  insert into public.organizations (name, owner_user_id)
+  values (trim(org_name), auth.uid())
+  returning id into created_org_id;
+
+  insert into public.organization_members (org_id, user_id, role)
+  values (created_org_id, auth.uid(), 'owner');
+
+  return created_org_id;
+end;
+$$;
+
+create or replace function public.add_org_admin(
+  requested_org_id uuid,
+  admin_email text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  admin_user_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in before adding an admin.';
+  end if;
+
+  if not public.is_org_owner(requested_org_id, auth.uid()) then
+    raise exception 'Only organization owners can add admins.';
+  end if;
+
+  select users.id into admin_user_id
+  from auth.users
+  where lower(users.email) = lower(trim(admin_email))
+  limit 1;
+
+  if admin_user_id is null then
+    raise exception 'No user found for that email. Ask them to create an account first.';
+  end if;
+
+  insert into public.organization_members (org_id, user_id, role)
+  values (requested_org_id, admin_user_id, 'admin')
+  on conflict (org_id, user_id) do update
+    set role = case
+      when public.organization_members.role = 'owner' then 'owner'
+      else 'admin'
+    end;
+
+  return admin_user_id;
+end;
+$$;
+
+create or replace function public.remove_org_admin(
+  requested_org_id uuid,
+  admin_user_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in before removing an admin.';
+  end if;
+
+  if not public.is_org_owner(requested_org_id, auth.uid()) then
+    raise exception 'Only organization owners can remove admins.';
+  end if;
+
+  delete from public.organization_members
+  where org_id = requested_org_id
+    and user_id = admin_user_id
+    and role = 'admin';
+end;
+$$;
+
+create or replace function public.create_owned_room(
+  requested_org_id uuid,
+  room_slug text,
+  room_name text
+)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  clean_slug text := lower(trim(room_slug));
+  clean_name text := trim(room_name);
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in before creating a room.';
+  end if;
+
+  if clean_slug !~ '^[a-z0-9][a-z0-9-]{0,62}$' then
+    raise exception 'Room slug must use lowercase letters, numbers, and hyphens.';
+  end if;
+
+  if length(clean_name) = 0 or length(clean_name) > 48 then
+    raise exception 'Room name must be 1 to 48 characters.';
+  end if;
+
+  if not public.is_org_admin(requested_org_id, auth.uid()) then
+    raise exception 'Only organization owners can create rooms.';
+  end if;
+
+  if not public.is_active_org_subscription(requested_org_id) then
+    raise exception 'Start the owner subscription before creating rooms.';
+  end if;
+
+  insert into public.rooms (slug, name, org_id)
+  values (clean_slug, clean_name, requested_org_id);
+
+  return clean_slug;
+end;
+$$;
+
+create or replace function public.delete_owned_room(
+  requested_org_id uuid,
+  room_slug text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in before deleting a room.';
+  end if;
+
+  if not public.is_org_admin(requested_org_id, auth.uid()) then
+    raise exception 'Only organization admins can delete rooms.';
+  end if;
+
+  if not public.is_active_org_subscription(requested_org_id) then
+    raise exception 'Start the owner subscription before deleting rooms.';
+  end if;
+
+  delete from public.rooms
+  where org_id = requested_org_id
+    and slug = room_slug;
+end;
+$$;
+
+create or replace function public.list_my_organizations()
+returns table (
+  org_id uuid,
+  org_name text,
+  role text,
+  subscription_status text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    organizations.id,
+    organizations.name,
+    organization_members.role,
+    org_subscriptions.status
+  from public.organization_members
+  join public.organizations
+    on organizations.id = organization_members.org_id
+  left join public.org_subscriptions
+    on org_subscriptions.org_id = organizations.id
+  where organization_members.user_id = auth.uid()
+  order by organizations.created_at desc;
+$$;
+
+create or replace function public.list_my_org_members(requested_org_id uuid)
+returns table (
+  user_id uuid,
+  email text,
+  role text,
+  created_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public, auth
+as $$
+  select
+    organization_members.user_id,
+    users.email::text,
+    organization_members.role,
+    organization_members.created_at
+  from public.organization_members
+  join auth.users
+    on users.id = organization_members.user_id
+  where organization_members.org_id = requested_org_id
+    and public.is_org_admin(requested_org_id, auth.uid())
+  order by
+    case organization_members.role when 'owner' then 0 else 1 end,
+    users.email;
+$$;
+
+create or replace function public.list_my_org_rooms(requested_org_id uuid)
+returns table (
+  slug text,
+  name text,
+  is_locked boolean,
+  archived_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select rooms.slug, rooms.name, rooms.is_locked, rooms.archived_at
+  from public.rooms
+  where rooms.org_id = requested_org_id
+    and public.is_org_admin(requested_org_id, auth.uid())
+  order by rooms.created_at desc;
+$$;
+
 alter table public.questions enable row level security;
 alter table public.votes enable row level security;
 alter table public.moderators enable row level security;
 alter table public.rooms enable row level security;
+alter table public.organizations enable row level security;
+alter table public.organization_members enable row level security;
+alter table public.org_subscriptions enable row level security;
 
 grant usage on schema public to anon, authenticated;
 grant select on public.rooms to anon, authenticated;
@@ -77,39 +417,73 @@ grant insert, update, delete on public.questions to authenticated;
 grant select on public.votes to anon, authenticated;
 grant insert, delete on public.votes to authenticated;
 grant select on public.moderators to authenticated;
+grant select, update on public.organizations to authenticated;
+grant select on public.organization_members to authenticated;
+grant select on public.org_subscriptions to authenticated;
+grant execute on function public.can_manage_room(text) to authenticated;
+grant execute on function public.create_organization(text) to authenticated;
+grant execute on function public.add_org_admin(uuid, text) to authenticated;
+grant execute on function public.remove_org_admin(uuid, uuid) to authenticated;
+grant execute on function public.create_owned_room(uuid, text, text) to authenticated;
+grant execute on function public.delete_owned_room(uuid, text) to authenticated;
+grant execute on function public.list_my_organizations() to authenticated;
+grant execute on function public.list_my_org_members(uuid) to authenticated;
+grant execute on function public.list_my_org_rooms(uuid) to authenticated;
 
 drop policy if exists "Anyone can read rooms" on public.rooms;
 drop policy if exists "Signed in users can create rooms" on public.rooms;
 drop policy if exists "Signed in users can update rooms" on public.rooms;
 drop policy if exists "Moderators can update rooms" on public.rooms;
+drop policy if exists "Anyone can create default room" on public.rooms;
+drop policy if exists "Paid owners can update rooms" on public.rooms;
+drop policy if exists "Paid owners can delete rooms" on public.rooms;
 
 create policy "Anyone can read rooms"
 on public.rooms for select
 to anon, authenticated
 using (true);
 
-create policy "Signed in users can create rooms"
+create policy "Anyone can create default room"
 on public.rooms for insert
 to anon, authenticated
-with check (true);
+with check (slug = 'main' and org_id is null);
 
-create policy "Signed in users can update rooms"
+create policy "Paid owners can update rooms"
 on public.rooms for update
 to authenticated
-using (
-  exists (
-    select 1
-    from public.moderators
-    where moderators.user_id = auth.uid()
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.moderators
-    where moderators.user_id = auth.uid()
-  )
-);
+using (public.can_manage_room(slug))
+with check (public.can_manage_room(slug));
+
+create policy "Paid owners can delete rooms"
+on public.rooms for delete
+to authenticated
+using (public.can_manage_room(slug));
+
+drop policy if exists "Organization members can read organizations" on public.organizations;
+drop policy if exists "Organization owners can update organizations" on public.organizations;
+drop policy if exists "Organization members can read memberships" on public.organization_members;
+drop policy if exists "Organization members can read subscriptions" on public.org_subscriptions;
+
+create policy "Organization members can read organizations"
+on public.organizations for select
+to authenticated
+using (public.is_org_admin(id, auth.uid()));
+
+create policy "Organization owners can update organizations"
+on public.organizations for update
+to authenticated
+using (public.is_org_admin(id, auth.uid()))
+with check (public.is_org_admin(id, auth.uid()));
+
+create policy "Organization members can read memberships"
+on public.organization_members for select
+to authenticated
+using (public.is_org_admin(org_id, auth.uid()));
+
+create policy "Organization members can read subscriptions"
+on public.org_subscriptions for select
+to authenticated
+using (public.is_org_admin(org_id, auth.uid()));
 
 drop policy if exists "Anyone can read questions" on public.questions;
 drop policy if exists "Anyone can create questions" on public.questions;
@@ -140,31 +514,15 @@ with check (
 create policy "Moderators can update questions"
 on public.questions for update
 to authenticated
-using (
-  exists (
-    select 1
-    from public.moderators
-    where moderators.user_id = auth.uid()
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.moderators
-    where moderators.user_id = auth.uid()
-  )
-);
+using (public.can_manage_room(room_slug))
+with check (public.can_manage_room(room_slug));
 
 create policy "Moderators can delete answered questions"
 on public.questions for delete
 to authenticated
 using (
   answered_at is not null
-  and exists (
-    select 1
-    from public.moderators
-    where moderators.user_id = auth.uid()
-  )
+  and public.can_manage_room(room_slug)
 );
 
 drop policy if exists "Anyone can read votes" on public.votes;

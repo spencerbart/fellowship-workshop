@@ -172,7 +172,7 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
     const question = questions.find((currentQuestion) => currentQuestion.id === id);
 
     if (!question || !isModerator) {
-      setErrorMessage("Only moderators can mark questions answered.");
+      setErrorMessage("Only paid organization owners can mark questions answered.");
       return;
     }
 
@@ -297,7 +297,7 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
             </form>
 
             <section className="border border-[#d8d0c2] bg-[#17201b] p-5 text-white shadow-sm">
-              <h2 className="text-lg font-semibold">Moderator queue</h2>
+              <h2 className="text-lg font-semibold">Owner queue</h2>
               <div className="mt-4 space-y-3 text-sm text-[#dbe5de]">
                 <div className="flex items-center justify-between border-b border-white/15 pb-3">
                   <span>Next up</span>
@@ -319,7 +319,7 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
                 <div className="flex items-center justify-between">
                   <span>Answer controls</span>
                   <strong className="text-white">
-                    {isModerator ? "Unlocked" : "Moderator only"}
+                    {isModerator ? "Unlocked" : "Owner only"}
                   </strong>
                 </div>
               </div>
@@ -331,7 +331,7 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
               <div>
                 <h2 className="text-xl font-semibold">Questions</h2>
                 <p className="mt-1 text-sm text-[#617066]">
-                  Signed-in users can vote. Moderators can mark answers.
+                  Signed-in users can vote. Paid owners can mark answers.
                 </p>
               </div>
 

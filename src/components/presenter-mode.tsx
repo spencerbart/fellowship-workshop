@@ -102,7 +102,7 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
 
   async function markAnswered() {
     if (!currentQuestion || !isModerator) {
-      setErrorMessage("Only moderators can mark questions answered.");
+      setErrorMessage("Only paid organization owners can mark questions answered.");
       return;
     }
 
@@ -128,7 +128,7 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
     const nextName = roomName.trim();
 
     if (!isModerator) {
-      setControlMessage("Only moderators can rename rooms.");
+      setControlMessage("Only paid organization owners can rename rooms.");
       return;
     }
 
@@ -154,7 +154,7 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
 
   async function toggleRoomLock() {
     if (!isModerator) {
-      setControlMessage("Only moderators can lock rooms.");
+      setControlMessage("Only paid organization owners can lock rooms.");
       return;
     }
 
@@ -174,7 +174,7 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
 
   async function toggleRoomArchive() {
     if (!isModerator) {
-      setControlMessage("Only moderators can archive rooms.");
+      setControlMessage("Only paid organization owners can archive rooms.");
       return;
     }
 
@@ -197,7 +197,7 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
 
   async function clearAnsweredQuestions() {
     if (!isModerator) {
-      setControlMessage("Only moderators can clear answered questions.");
+      setControlMessage("Only paid organization owners can clear answered questions.");
       return;
     }
 
@@ -338,7 +338,7 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
                     Room controls
                   </h2>
                   <p className="mt-1 text-sm text-[#dbe5de]">
-                    Moderator-only settings
+                    Paid owner settings
                   </p>
                 </div>
                 <span className="border border-white/20 px-2 py-1 text-xs font-semibold text-[#dbe5de]">
@@ -407,7 +407,7 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
             </section>
 
             <section className="border border-white/15 bg-[#17201b] p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-white">Presenter access</h2>
+              <h2 className="text-lg font-semibold text-white">Owner access</h2>
               {user ? (
                 <div className="mt-4">
                   <p className="break-all text-sm font-semibold text-[#dbe5de]">
@@ -415,8 +415,8 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
                   </p>
                   <p className="mt-3 text-sm font-medium text-[#dbe5de]">
                     {isModerator
-                      ? "Moderator controls are unlocked."
-                      : "Signed in, but not a moderator."}
+                      ? "Owner controls are unlocked."
+                      : "Signed in, but not a paid owner for this room."}
                   </p>
                   <button
                     type="button"

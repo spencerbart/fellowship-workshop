@@ -29,6 +29,10 @@ export function useRoomQa(roomSlug: string) {
   const [errorMessage, setErrorMessage] = useState("");
 
   const ensureRoom = useCallback(async () => {
+    if (roomSlug !== "main") {
+      return;
+    }
+
     await supabase.from("rooms").upsert(
       {
         slug: roomSlug,
@@ -64,15 +68,24 @@ export function useRoomQa(roomSlug: string) {
         return;
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await supabase.rpc("can_manage_room", {
+        requested_room_slug: roomSlug,
+      });
+
+      if (!error) {
+        setIsModerator(Boolean(data));
+        return;
+      }
+
+      const { data: legacyData, error: legacyError } = await supabase
         .from("moderators")
         .select("user_id")
         .eq("user_id", currentUser.id)
         .maybeSingle();
 
-      setIsModerator(!error && Boolean(data));
+      setIsModerator(!legacyError && Boolean(legacyData));
     },
-    [supabase],
+    [roomSlug, supabase],
   );
 
   const loadQuestions = useCallback(

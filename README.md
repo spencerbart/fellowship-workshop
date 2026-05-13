@@ -22,6 +22,16 @@ Fill in the Supabase values:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key_here
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
+```
+
+Fill in the Stripe values:
+
+```bash
+STRIPE_SECRET_KEY=sk_test_your_key_here
+STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
+# Optional. If omitted, Checkout creates a $5/month recurring price inline.
+STRIPE_PRICE_ID=price_your_monthly_owner_plan_here
 ```
 
 Create or update the Supabase tables and policies by running
@@ -54,7 +64,17 @@ The home page redirects to the default room:
 /rooms/main
 ```
 
-Create additional rooms by changing the slug:
+Owner billing and room management is available at:
+
+```txt
+/owner
+```
+
+Owners create organizations, start the $5/month Stripe subscription, add admins,
+and create or delete managed rooms from the owner console. Audience participants
+do not need a paid account to ask questions or vote.
+
+Legacy room URLs still work when the room exists:
 
 ```txt
 /rooms/frontend
