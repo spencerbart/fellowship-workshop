@@ -23,6 +23,8 @@ export type Room = {
   name: string;
   isLocked: boolean;
   archivedAt: string | null;
+  logoPath: string | null;
+  accentColor: string;
 };
 
 export type Question = {

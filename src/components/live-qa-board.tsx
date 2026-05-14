@@ -68,6 +68,9 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
   const answeredQuestions = questions.length - openQuestions;
   const displayRoomTitle = room.name || roomTitle(roomSlug) || roomSlug;
   const submissionsClosed = room.isLocked || Boolean(room.archivedAt);
+  const logoUrl = room.logoPath
+    ? supabase.storage.from("room-assets").getPublicUrl(room.logoPath).data.publicUrl
+    : null;
 
   async function handleAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -223,13 +226,28 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
     <main className="app-page">
       <div className="app-shell">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">
-              {displayRoomTitle}
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Live Q&A Board
-            </h1>
+          <div className="flex min-w-0 items-center gap-4">
+            {logoUrl ? (
+              <div
+                className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-white p-2 shadow-sm"
+                style={{ borderColor: room.accentColor }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={logoUrl}
+                  alt=""
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            ) : null}
+            <div className="min-w-0">
+              <p className="eyebrow" style={{ color: room.accentColor }}>
+                {displayRoomTitle}
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
+                Live Q&A Board
+              </h1>
+            </div>
           </div>
 
           <div className="card grid grid-cols-4 overflow-hidden sm:w-[560px]">

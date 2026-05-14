@@ -19,6 +19,8 @@ type OwnedRoom = {
   name: string;
   is_locked: boolean;
   archived_at: string | null;
+  logo_path: string | null;
+  accent_color: string | null;
 };
 
 type OrgMember = {
@@ -61,6 +63,7 @@ export default function OwnerDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
   const [deletingRoomSlug, setDeletingRoomSlug] = useState("");
+  const [brandingRoomSlug, setBrandingRoomSlug] = useState("");
 
   const selectedOrg = organizations.find((org) => org.org_id === selectedOrgId);
   const selectedOrgRooms = selectedOrg ? roomsByOrg[selectedOrg.org_id] ?? [] : [];
@@ -288,6 +291,120 @@ export default function OwnerDashboard() {
     }
 
     setDeletingRoomSlug("");
+  }
+
+  async function saveRoomBranding(
+    event: FormEvent<HTMLFormElement>,
+    room: OwnedRoom,
+  ) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    formData.set("roomSlug", room.slug);
+
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+
+    if (!token) {
+      setMessage("Sign in before updating room branding.");
+      return;
+    }
+
+    setBrandingRoomSlug(room.slug);
+    setMessage("");
+
+    const response = await fetch("/api/rooms/branding", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          room?: {
+            slug: string;
+            logo_path: string | null;
+            accent_color: string | null;
+          };
+          error?: string;
+        }
+      | null;
+
+    if (!response.ok || !payload?.room) {
+      setMessage(payload?.error ?? "Could not update room branding.");
+      setBrandingRoomSlug("");
+      return;
+    }
+
+    setRoomsByOrg((currentRoomsByOrg) => ({
+      ...currentRoomsByOrg,
+      [selectedOrgId]: (currentRoomsByOrg[selectedOrgId] ?? []).map((currentRoom) =>
+        currentRoom.slug === payload.room?.slug
+          ? {
+              ...currentRoom,
+              logo_path: payload.room.logo_path,
+              accent_color: payload.room.accent_color,
+            }
+          : currentRoom,
+      ),
+    }));
+    setMessage("Room branding updated.");
+    form.reset();
+    setBrandingRoomSlug("");
+  }
+
+  async function removeRoomLogo(room: OwnedRoom) {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+
+    if (!token) {
+      setMessage("Sign in before updating room branding.");
+      return;
+    }
+
+    setBrandingRoomSlug(room.slug);
+    setMessage("");
+
+    const response = await fetch("/api/rooms/branding", {
+      method: "DELETE",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ roomSlug: room.slug }),
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          room?: {
+            slug: string;
+            logo_path: string | null;
+            accent_color: string | null;
+          };
+          error?: string;
+        }
+      | null;
+
+    if (!response.ok || !payload?.room) {
+      setMessage(payload?.error ?? "Could not remove room logo.");
+      setBrandingRoomSlug("");
+      return;
+    }
+
+    setRoomsByOrg((currentRoomsByOrg) => ({
+      ...currentRoomsByOrg,
+      [selectedOrgId]: (currentRoomsByOrg[selectedOrgId] ?? []).map((currentRoom) =>
+        currentRoom.slug === payload.room?.slug
+          ? {
+              ...currentRoom,
+              logo_path: null,
+              accent_color: payload.room.accent_color,
+            }
+          : currentRoom,
+      ),
+    }));
+    setMessage("Room logo removed.");
+    setBrandingRoomSlug("");
   }
 
   async function addAdmin(event: FormEvent<HTMLFormElement>) {
@@ -594,8 +711,7 @@ export default function OwnerDashboard() {
               ) : null}
 
               {selectedOrg ? (
-                <form
-                  onSubmit={createRoom}
+                <section
                   className="card p-5"
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -616,50 +732,52 @@ export default function OwnerDashboard() {
                     </span>
                   </div>
 
-                  <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-sm font-medium" htmlFor="room-slug">
-                        Room slug
-                      </label>
-                      <input
-                        id="room-slug"
-                        value={roomSlug}
-                        onChange={(event) => setRoomSlug(event.target.value)}
-                        placeholder="workshop-day-1"
-                        className="field mt-2 h-11 px-3 text-base"
-                        pattern="[a-z0-9][a-z0-9-]{0,62}"
-                        disabled={!subscriptionActive}
-                        required
-                      />
+                  <form onSubmit={createRoom}>
+                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-sm font-medium" htmlFor="room-slug">
+                          Room slug
+                        </label>
+                        <input
+                          id="room-slug"
+                          value={roomSlug}
+                          onChange={(event) => setRoomSlug(event.target.value)}
+                          placeholder="workshop-day-1"
+                          className="field mt-2 h-11 px-3 text-base"
+                          pattern="[a-z0-9][a-z0-9-]{0,62}"
+                          disabled={!subscriptionActive}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium" htmlFor="room-name">
+                          Display name
+                        </label>
+                        <input
+                          id="room-name"
+                          value={roomName}
+                          onChange={(event) => setRoomName(event.target.value)}
+                          placeholder="Workshop Day 1"
+                          className="field mt-2 h-11 px-3 text-base"
+                          maxLength={48}
+                          disabled={!subscriptionActive}
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium" htmlFor="room-name">
-                        Display name
-                      </label>
-                      <input
-                        id="room-name"
-                        value={roomName}
-                        onChange={(event) => setRoomName(event.target.value)}
-                        placeholder="Workshop Day 1"
-                        className="field mt-2 h-11 px-3 text-base"
-                        maxLength={48}
-                        disabled={!subscriptionActive}
-                      />
-                    </div>
-                  </div>
 
-                  <button
-                    type="submit"
-                    disabled={
-                      !subscriptionActive ||
-                      isWorking ||
-                      !roomSlug.trim() ||
-                      !selectedOrg
-                    }
-                    className="btn-primary mt-4 h-11"
-                  >
-                    Create room
-                  </button>
+                    <button
+                      type="submit"
+                      disabled={
+                        !subscriptionActive ||
+                        isWorking ||
+                        !roomSlug.trim() ||
+                        !selectedOrg
+                      }
+                      className="btn-primary mt-4 h-11"
+                    >
+                      Create room
+                    </button>
+                  </form>
 
                   <div className="mt-5 space-y-3">
                     {selectedOrgRooms.length === 0 ? (
@@ -681,6 +799,14 @@ export default function OwnerDashboard() {
                             </div>
 
                             <RoomRecap analytics={analyticsByRoom[room.slug]} />
+
+                            <RoomBrandingForm
+                              room={room}
+                              logoUrl={getRoomLogoUrl(supabase, room.logo_path)}
+                              isWorking={brandingRoomSlug === room.slug}
+                              onSave={saveRoomBranding}
+                              onRemoveLogo={removeRoomLogo}
+                            />
 
                             <div className="flex flex-wrap gap-3">
                               <Link
@@ -715,7 +841,7 @@ export default function OwnerDashboard() {
                       ))
                     )}
                   </div>
-                </form>
+                </section>
               ) : null}
             </section>
           </div>
@@ -827,6 +953,108 @@ function RoomRecap({ analytics }: { analytics?: RoomAnalytics }) {
   );
 }
 
+function RoomBrandingForm({
+  room,
+  logoUrl,
+  isWorking,
+  onSave,
+  onRemoveLogo,
+}: {
+  room: OwnedRoom;
+  logoUrl: string | null;
+  isWorking: boolean;
+  onSave: (event: FormEvent<HTMLFormElement>, room: OwnedRoom) => void;
+  onRemoveLogo: (room: OwnedRoom) => void;
+}) {
+  const accentColor = room.accent_color ?? "#17483f";
+
+  return (
+    <form
+      onSubmit={(event) => onSave(event, room)}
+      className="rounded-md border border-[#d8d0c2] bg-[#fffefa] p-3"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border border-[#d8d0c2] bg-white"
+            style={{ borderColor: accentColor }}
+          >
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logoUrl}
+                alt=""
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <span
+                className="text-lg font-semibold"
+                style={{ color: accentColor }}
+              >
+                {room.name.charAt(0).toUpperCase()}
+              </span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <h4 className="text-sm font-semibold">Room branding</h4>
+            <p className="mt-1 text-xs muted">
+              Upload a logo and choose the accent color.
+            </p>
+          </div>
+        </div>
+
+        {logoUrl ? (
+          <button
+            type="button"
+            onClick={() => onRemoveLogo(room)}
+            disabled={isWorking}
+            className="btn-secondary h-10"
+          >
+            Remove logo
+          </button>
+        ) : null}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)_auto] sm:items-end">
+        <div>
+          <label
+            className="block text-sm font-medium"
+            htmlFor={`accent-${room.slug}`}
+          >
+            Accent
+          </label>
+          <input
+            id={`accent-${room.slug}`}
+            name="accentColor"
+            type="color"
+            defaultValue={accentColor}
+            className="mt-2 h-11 w-full rounded-md border border-[#cbbfaf] bg-[#fffefa] p-1"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium" htmlFor={`logo-${room.slug}`}>
+            Logo
+          </label>
+          <input
+            id={`logo-${room.slug}`}
+            name="logo"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="field mt-2 h-11 px-3 py-2 text-sm"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={isWorking}
+          className="btn-primary h-11"
+        >
+          {isWorking ? "Saving..." : "Save branding"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function RecapStat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="min-w-0 rounded-md border border-[#d8d0c2] bg-[#fffefa] px-3 py-2">
@@ -836,6 +1064,17 @@ function RecapStat({ label, value }: { label: string; value: number | string }) 
       </div>
     </div>
   );
+}
+
+function getRoomLogoUrl(
+  supabase: ReturnType<typeof createClient>,
+  logoPath: string | null,
+) {
+  if (!logoPath) {
+    return null;
+  }
+
+  return supabase.storage.from("room-assets").getPublicUrl(logoPath).data.publicUrl;
 }
 
 function formatActivityTime(value: string | null) {

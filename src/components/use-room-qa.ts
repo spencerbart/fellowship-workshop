@@ -19,6 +19,8 @@ export function useRoomQa(roomSlug: string) {
     name: roomTitle(roomSlug) || roomSlug,
     isLocked: false,
     archivedAt: null,
+    logoPath: null,
+    accentColor: "#17483f",
   });
   const [user, setUser] = useState<User | null>(null);
   const [isModerator, setIsModerator] = useState(false);
@@ -45,7 +47,7 @@ export function useRoomQa(roomSlug: string) {
   const loadRoom = useCallback(async () => {
     const { data, error } = await supabase
       .from("rooms")
-      .select("slug, name, is_locked, archived_at")
+      .select("slug, name, is_locked, archived_at, logo_path, accent_color")
       .eq("slug", roomSlug)
       .maybeSingle();
 
@@ -58,6 +60,8 @@ export function useRoomQa(roomSlug: string) {
       name: data.name,
       isLocked: Boolean(data.is_locked),
       archivedAt: data.archived_at,
+      logoPath: data.logo_path,
+      accentColor: data.accent_color ?? "#17483f",
     });
   }, [roomSlug, supabase]);
 

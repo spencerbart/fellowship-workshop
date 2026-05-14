@@ -51,6 +51,9 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
   const highlightedQuestions = openQuestions.filter(
     (question) => question.highlighted,
   ).length;
+  const logoUrl = room.logoPath
+    ? supabase.storage.from("room-assets").getPublicUrl(room.logoPath).data.publicUrl
+    : null;
 
   const upcomingQuestions = useMemo(
     () =>
@@ -230,13 +233,28 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
     <main className="app-page-dark h-screen overflow-hidden">
       <div className="mx-auto flex h-screen w-full max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6">
         <header className="flex shrink-0 flex-col gap-3 border-b border-white/15 pb-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="eyebrow text-[#f1a27f]">
-              Presenter Mode · {displayRoomTitle}
-            </p>
-            <h1 className="mt-1 text-3xl font-semibold sm:text-4xl">
-              Live Q&A
-            </h1>
+          <div className="flex min-w-0 items-center gap-4">
+            {logoUrl ? (
+              <div
+                className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-white p-2 shadow-sm"
+                style={{ borderColor: room.accentColor }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={logoUrl}
+                  alt=""
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            ) : null}
+            <div className="min-w-0">
+              <p className="eyebrow" style={{ color: room.accentColor }}>
+                Presenter Mode · {displayRoomTitle}
+              </p>
+              <h1 className="mt-1 text-3xl font-semibold sm:text-4xl">
+                Live Q&A
+              </h1>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-3">
