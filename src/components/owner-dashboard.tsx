@@ -28,6 +28,18 @@ type OrgMember = {
   created_at: string;
 };
 
+type RoomAnalytics = {
+  total_questions: number;
+  open_questions: number;
+  answered_questions: number;
+  highlighted_questions: number;
+  total_votes: number;
+  participant_count: number;
+  answer_rate: number;
+  first_activity_at: string | null;
+  last_activity_at: string | null;
+};
+
 export default function OwnerDashboard() {
   const supabase = useMemo(() => createClient(), []);
   const [user, setUser] = useState<User | null>(null);
@@ -41,6 +53,9 @@ export default function OwnerDashboard() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [roomsByOrg, setRoomsByOrg] = useState<Record<string, OwnedRoom[]>>({});
   const [membersByOrg, setMembersByOrg] = useState<Record<string, OrgMember[]>>({});
+  const [analyticsByRoom, setAnalyticsByRoom] = useState<
+    Record<string, RoomAnalytics>
+  >({});
   const [selectedOrgId, setSelectedOrgId] = useState("");
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -85,6 +100,7 @@ export default function OwnerDashboard() {
           setOrganizations([]);
           setRoomsByOrg({});
           setMembersByOrg({});
+          setAnalyticsByRoom({});
           setSelectedOrgId("");
         }
       },
@@ -115,7 +131,7 @@ export default function OwnerDashboard() {
         : nextOrganizations[0]?.org_id ?? "";
     setSelectedOrgId(nextSelectedOrgId);
 
-    const [roomEntries, memberEntries] = await Promise.all([
+    const [roomEntryPromises, memberEntryPromises] = [
       nextOrganizations.map(async (org) => {
         const { data: rooms, error: roomsError } = await supabase.rpc(
           "list_my_org_rooms",
@@ -135,10 +151,35 @@ export default function OwnerDashboard() {
           membersError ? [] : ((members ?? []) as OrgMember[]),
         ] as const;
       }),
+    ];
+
+    const [roomEntries, memberEntries] = await Promise.all([
+      Promise.all(roomEntryPromises),
+      Promise.all(memberEntryPromises),
     ]);
 
-    setRoomsByOrg(Object.fromEntries(await Promise.all(roomEntries)));
-    setMembersByOrg(Object.fromEntries(await Promise.all(memberEntries)));
+    const analyticsEntries = await Promise.all(
+      roomEntries.flatMap(([, rooms]) =>
+        rooms.map(async (room) => {
+          const { data, error: analyticsError } = await supabase.rpc(
+            "get_room_analytics",
+            { requested_room_slug: room.slug },
+          );
+          const analytics = Array.isArray(data) ? data[0] : null;
+
+          return [
+            room.slug,
+            analyticsError || !analytics
+              ? emptyRoomAnalytics()
+              : normalizeRoomAnalytics(analytics as RoomAnalytics),
+          ] as const;
+        }),
+      ),
+    );
+
+    setRoomsByOrg(Object.fromEntries(roomEntries));
+    setMembersByOrg(Object.fromEntries(memberEntries));
+    setAnalyticsByRoom(Object.fromEntries(analyticsEntries));
   }
 
   async function handleAuth(event: FormEvent<HTMLFormElement>) {
@@ -629,41 +670,46 @@ export default function OwnerDashboard() {
                       selectedOrgRooms.map((room) => (
                         <div
                           key={room.slug}
-                          className="flex flex-col gap-3 card-muted p-4 sm:flex-row sm:items-center sm:justify-between"
+                          className="card-muted p-4"
                         >
-                          <div>
-                            <h3 className="font-semibold">{room.name}</h3>
-                            <p className="mt-1 text-sm muted">
-                              /rooms/{room.slug}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-3">
-                            <Link
-                              href={`/rooms/${room.slug}`}
-                              className="btn-secondary h-10"
-                            >
-                              Audience
-                            </Link>
-                            <Link
-                              href={`/rooms/${room.slug}/presenter`}
-                              className="btn-primary h-10"
-                            >
-                              Presenter
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={() => void deleteRoom(room.slug)}
-                              disabled={
-                                !subscriptionActive ||
-                                Boolean(deletingRoomSlug) ||
-                                isWorking
-                              }
-                              className="btn-danger h-10"
-                            >
-                              {deletingRoomSlug === room.slug
-                                ? "Deleting..."
-                                : "Delete"}
-                            </button>
+                          <div className="flex min-w-0 flex-col gap-4">
+                            <div className="min-w-0">
+                              <h3 className="truncate font-semibold">{room.name}</h3>
+                              <p className="mt-1 break-all text-sm muted">
+                                /rooms/{room.slug}
+                              </p>
+                            </div>
+
+                            <RoomRecap analytics={analyticsByRoom[room.slug]} />
+
+                            <div className="flex flex-wrap gap-3">
+                              <Link
+                                href={`/rooms/${room.slug}`}
+                                className="btn-secondary h-10"
+                              >
+                                Audience
+                              </Link>
+                              <Link
+                                href={`/rooms/${room.slug}/presenter`}
+                                className="btn-primary h-10"
+                              >
+                                Presenter
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => void deleteRoom(room.slug)}
+                                disabled={
+                                  !subscriptionActive ||
+                                  Boolean(deletingRoomSlug) ||
+                                  isWorking
+                                }
+                                className="btn-danger h-10"
+                              >
+                                {deletingRoomSlug === room.slug
+                                  ? "Deleting..."
+                                  : "Delete"}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))
@@ -732,4 +778,75 @@ export default function OwnerDashboard() {
       </div>
     </main>
   );
+}
+
+function emptyRoomAnalytics(): RoomAnalytics {
+  return {
+    total_questions: 0,
+    open_questions: 0,
+    answered_questions: 0,
+    highlighted_questions: 0,
+    total_votes: 0,
+    participant_count: 0,
+    answer_rate: 0,
+    first_activity_at: null,
+    last_activity_at: null,
+  };
+}
+
+function normalizeRoomAnalytics(analytics: RoomAnalytics): RoomAnalytics {
+  return {
+    total_questions: Number(analytics.total_questions ?? 0),
+    open_questions: Number(analytics.open_questions ?? 0),
+    answered_questions: Number(analytics.answered_questions ?? 0),
+    highlighted_questions: Number(analytics.highlighted_questions ?? 0),
+    total_votes: Number(analytics.total_votes ?? 0),
+    participant_count: Number(analytics.participant_count ?? 0),
+    answer_rate: Number(analytics.answer_rate ?? 0),
+    first_activity_at: analytics.first_activity_at,
+    last_activity_at: analytics.last_activity_at,
+  };
+}
+
+function RoomRecap({ analytics }: { analytics?: RoomAnalytics }) {
+  const roomAnalytics = analytics ?? emptyRoomAnalytics();
+
+  return (
+    <div className="min-w-0">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(104px,1fr))] gap-2">
+        <RecapStat label="Participants" value={roomAnalytics.participant_count} />
+        <RecapStat label="Questions" value={roomAnalytics.total_questions} />
+        <RecapStat label="Open" value={roomAnalytics.open_questions} />
+        <RecapStat label="Votes" value={roomAnalytics.total_votes} />
+        <RecapStat label="Answered" value={`${roomAnalytics.answer_rate}%`} />
+      </div>
+      <p className="mt-3 text-xs font-medium muted">
+        Last activity: {formatActivityTime(roomAnalytics.last_activity_at)}
+      </p>
+    </div>
+  );
+}
+
+function RecapStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="min-w-0 rounded-md border border-[#d8d0c2] bg-[#fffefa] px-3 py-2">
+      <div className="truncate text-lg font-semibold">{value}</div>
+      <div className="muted mt-1 truncate text-[0.68rem] font-semibold uppercase tracking-[0.08em]">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function formatActivityTime(value: string | null) {
+  if (!value) {
+    return "No activity yet";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
 }

@@ -156,10 +156,9 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
       return;
     }
 
-    const { error: voteError } = await supabase.from("votes").insert({
-      question_id: result.question.id,
-      client_id: user.id,
-      user_id: user.id,
+    const { error: voteError } = await supabase.rpc("toggle_room_vote", {
+      requested_question_id: result.question.id,
+      should_vote: true,
     });
 
     if (voteError) {
@@ -182,17 +181,10 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
     const hasVoted = votedIds.includes(id);
     setErrorMessage("");
 
-    const { error } = hasVoted
-      ? await supabase
-          .from("votes")
-          .delete()
-          .eq("question_id", id)
-          .eq("user_id", user.id)
-      : await supabase.from("votes").insert({
-          question_id: id,
-          client_id: user.id,
-          user_id: user.id,
-        });
+    const { error } = await supabase.rpc("toggle_room_vote", {
+      requested_question_id: id,
+      should_vote: !hasVoted,
+    });
 
     if (error) {
       setErrorMessage(error.message);

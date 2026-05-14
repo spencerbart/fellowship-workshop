@@ -32,6 +32,8 @@ STRIPE_SECRET_KEY=sk_test_your_key_here
 STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
 # Optional. If omitted, Checkout creates a $5/month recurring price inline.
 STRIPE_PRICE_ID=price_your_monthly_owner_plan_here
+# Optional. Used to hash IPs for submission rate limits.
+RATE_LIMIT_SALT=replace_with_a_random_secret
 ```
 
 Create or update the Supabase tables and policies by running
@@ -73,6 +75,8 @@ Owner billing and room management is available at:
 Owners create organizations, start the $5/month Stripe subscription, add admins,
 and create or delete managed rooms from the owner console. Audience participants
 do not need a paid account to ask questions or vote.
+The owner console also shows per-room recap metrics for participants, questions,
+votes, answer rate, and last activity.
 
 Legacy room URLs still work when the room exists:
 

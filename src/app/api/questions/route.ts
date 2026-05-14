@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   moderateQuestion,
@@ -16,6 +17,27 @@ const questionRequestSchema = z.object({
     .trim()
     .regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
 });
+
+const MAX_QUESTIONS_PER_MINUTE = 5;
+const MAX_QUESTIONS_PER_IP_PER_MINUTE = 20;
+const MAX_OPEN_QUESTIONS_PER_USER = 8;
+
+function getIpFingerprint(request: Request) {
+  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const ip =
+    forwardedFor ??
+    request.headers.get("x-real-ip") ??
+    request.headers.get("cf-connecting-ip") ??
+    "unknown";
+
+  return createHash("sha256")
+    .update(`${process.env.RATE_LIMIT_SALT ?? "fellowship"}:${ip}`)
+    .digest("hex");
+}
+
+function normalizeQuestionBody(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
 
 export async function POST(request: Request) {
   const { user, error: authError } = await getUserFromRequest(request);
@@ -35,6 +57,7 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient();
   const { body, author, roomSlug } = parsed.data;
+  const ipFingerprint = getIpFingerprint(request);
 
   const { data: room, error: roomError } = await supabase
     .from("rooms")
@@ -54,6 +77,83 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "This room is not accepting new questions." },
       { status: 403 },
+    );
+  }
+
+  const oneMinuteAgo = new Date(Date.now() - 60_000).toISOString();
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString();
+  const [
+    { count: recentUserQuestionCount, error: userRateError },
+    { count: recentIpQuestionCount, error: ipRateError },
+    { count: openQuestionCount, error: openQuestionError },
+    { data: recentQuestions, error: recentQuestionsError },
+  ] = await Promise.all([
+    supabase
+      .from("rate_limit_events")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "question")
+      .eq("room_slug", roomSlug)
+      .eq("user_id", user.id)
+      .gt("created_at", oneMinuteAgo),
+    supabase
+      .from("rate_limit_events")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "question")
+      .eq("room_slug", roomSlug)
+      .eq("ip_fingerprint", ipFingerprint)
+      .gt("created_at", oneMinuteAgo),
+    supabase
+      .from("questions")
+      .select("id", { count: "exact", head: true })
+      .eq("room_slug", roomSlug)
+      .eq("user_id", user.id)
+      .is("answered_at", null),
+    supabase
+      .from("questions")
+      .select("body")
+      .eq("room_slug", roomSlug)
+      .eq("user_id", user.id)
+      .gt("created_at", fiveMinutesAgo)
+      .limit(20),
+  ]);
+
+  const rateError =
+    userRateError ?? ipRateError ?? openQuestionError ?? recentQuestionsError;
+
+  if (rateError) {
+    return NextResponse.json({ error: rateError.message }, { status: 500 });
+  }
+
+  if ((recentUserQuestionCount ?? 0) >= MAX_QUESTIONS_PER_MINUTE) {
+    return NextResponse.json(
+      { error: "Too many questions in a short period. Wait a minute and try again." },
+      { status: 429 },
+    );
+  }
+
+  if ((recentIpQuestionCount ?? 0) >= MAX_QUESTIONS_PER_IP_PER_MINUTE) {
+    return NextResponse.json(
+      { error: "This network is submitting too quickly. Wait a minute and try again." },
+      { status: 429 },
+    );
+  }
+
+  if ((openQuestionCount ?? 0) >= MAX_OPEN_QUESTIONS_PER_USER) {
+    return NextResponse.json(
+      { error: "You have several open questions already. Vote or wait for answers before adding more." },
+      { status: 429 },
+    );
+  }
+
+  const normalizedBody = normalizeQuestionBody(body);
+  const duplicateQuestion = (recentQuestions ?? []).some(
+    (question) => normalizeQuestionBody(question.body) === normalizedBody,
+  );
+
+  if (duplicateQuestion) {
+    return NextResponse.json(
+      { error: "That question was already submitted recently." },
+      { status: 409 },
     );
   }
 
@@ -82,6 +182,13 @@ export async function POST(request: Request) {
   }
 
   if (moderation.action === "reject") {
+    await supabase.from("rate_limit_events").insert({
+      room_slug: roomSlug,
+      user_id: user.id,
+      ip_fingerprint: ipFingerprint,
+      action: "question",
+    });
+
     return NextResponse.json(
       {
         accepted: false,
@@ -112,6 +219,28 @@ export async function POST(request: Request) {
 
   if (insertError) {
     return NextResponse.json({ error: insertError.message }, { status: 500 });
+  }
+
+  const { error: analyticsError } = await supabase
+    .from("room_participants")
+    .upsert(
+      {
+        room_slug: roomSlug,
+        user_id: user.id,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: "room_slug,user_id" },
+    );
+
+  const { error: rateEventError } = await supabase.from("rate_limit_events").insert({
+    room_slug: roomSlug,
+    user_id: user.id,
+    ip_fingerprint: ipFingerprint,
+    action: "question",
+  });
+
+  if (analyticsError || rateEventError) {
+    console.error("Question analytics write failed", analyticsError ?? rateEventError);
   }
 
   return NextResponse.json({

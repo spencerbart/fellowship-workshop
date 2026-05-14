@@ -170,6 +170,11 @@ export function useRoomQa(roomSlug: string) {
       activeUser = data.user;
       setUser(data.user);
       setIsAuthLoading(false);
+      if (data.user) {
+        await supabase.rpc("track_room_presence", {
+          requested_room_slug: roomSlug,
+        });
+      }
       await Promise.all([
         loadQuestions(data.user),
         loadModeratorStatus(data.user),
@@ -181,6 +186,11 @@ export function useRoomQa(roomSlug: string) {
         activeUser = session?.user ?? null;
         setUser(activeUser);
         queueMicrotask(() => {
+          if (activeUser) {
+            void supabase.rpc("track_room_presence", {
+              requested_room_slug: roomSlug,
+            });
+          }
           void loadQuestions(activeUser);
           void loadModeratorStatus(activeUser);
         });
