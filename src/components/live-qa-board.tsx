@@ -194,59 +194,160 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f3ee] text-[#17201b]">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 border-b border-[#ded7cb] pb-5 lg:flex-row lg:items-center lg:justify-between">
+    <main className="app-page">
+      <div className="app-shell">
+        <header className="topbar">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a14d38]">
+            <p className="eyebrow">
               {displayRoomTitle}
             </p>
-            <h1 className="mt-2 text-3xl font-semibold text-[#111814] sm:text-4xl">
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
               Live Q&A Board
             </h1>
           </div>
 
-          <div className="grid grid-cols-3 overflow-hidden border border-[#d8d0c2] bg-white shadow-sm sm:w-[460px]">
+          <div className="card grid grid-cols-3 overflow-hidden sm:w-[460px]">
             <Stat label="Open" value={openQuestions} />
             <Stat label="Answered" value={answeredQuestions} />
             <Stat label="Votes" value={totalVotes} />
           </div>
         </header>
 
-        <div className="grid flex-1 gap-6 lg:grid-cols-[390px_minmax(0,1fr)]">
-          <aside className="space-y-5 lg:sticky lg:top-5 lg:self-start">
-            <AccountPanel
-              authMode={authMode}
-              email={email}
-              password={password}
-              authMessage={authMessage}
-              isModerator={isModerator}
-              user={user}
-              onAuth={handleAuth}
-              onAuthModeChange={setAuthMode}
-              onEmailChange={setEmail}
-              onPasswordChange={setPassword}
-              onSignOut={() => void signOut()}
-            />
+        <div className="grid flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
+          <section className="min-w-0">
+            <div className="card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">Questions</h2>
+                <p className="mt-1 text-sm muted">
+                  Vote for what you want answered next.
+                </p>
+              </div>
 
+              <div className="grid grid-cols-3 rounded-md border border-[#cbbfaf] bg-[#eee8dc] p-1">
+                {filters.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => setFilter(item.value)}
+                    className={`h-9 px-4 text-sm font-semibold transition ${
+                      filter === item.value
+                        ? "rounded bg-white text-[#18211d] shadow-sm"
+                        : "muted hover:text-[#18211d]"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {errorMessage ? (
+              <div className="mt-4 rounded-md border border-[#e0b1a9] bg-[#fff8f6] p-4 text-sm font-medium text-[#a43d34]">
+                {errorMessage}
+              </div>
+            ) : null}
+
+            <div className="mt-4 space-y-3">
+              {isLoading ? (
+                <div className="card p-8 text-center text-sm font-medium muted shadow-sm">
+                  Loading questions from Supabase...
+                </div>
+              ) : null}
+
+              {!isLoading && visibleQuestions.length === 0 ? (
+                <div className="card p-8 text-center text-sm font-medium muted shadow-sm">
+                  No questions in this view yet.
+                </div>
+              ) : null}
+
+              {visibleQuestions.map((question) => (
+                <article
+                  key={question.id}
+                  className={`grid gap-4 rounded-lg border p-4 shadow-sm transition sm:grid-cols-[72px_minmax(0,1fr)_auto] ${
+                    question.answered
+                      ? "border-[#d8d0c2] bg-[#f8f5ee]"
+                      : "border-[#d1ddd8] bg-white"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => void toggleVote(question.id)}
+                    disabled={!user}
+                    className={`flex h-20 w-full flex-col items-center justify-center rounded-md border text-sm font-semibold transition disabled:cursor-not-allowed sm:w-[72px] ${
+                      votedIds.includes(question.id)
+                        ? "border-[#17483f] bg-[#eef8f1] text-[#17483f]"
+                        : "border-[#d8d0c2] bg-[#fffefa] text-[#3c4942] hover:border-[#17483f] disabled:bg-[#eee8dc]"
+                    }`}
+                    aria-label={`Vote for question by ${question.author}`}
+                  >
+                    <span className="text-lg leading-none">↑</span>
+                    <span className="mt-1 text-xl leading-none">{question.votes}</span>
+                  </button>
+
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="pill pill-warn">
+                        {question.topic}
+                      </span>
+                      {question.answered ? (
+                        <span className="pill pill-info">
+                          Answered
+                        </span>
+                      ) : null}
+                      {question.mine ? (
+                        <span className="pill">
+                          Voted
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <p className="mt-3 text-lg font-medium leading-7">
+                      {question.body}
+                    </p>
+                    <p className="mt-3 text-sm muted">
+                      Asked by {question.author} · {question.createdAt}
+                    </p>
+                  </div>
+
+                  {isModerator ? (
+                    <button
+                      type="button"
+                      onClick={() => void toggleAnswered(question.id)}
+                      className={`h-10 whitespace-nowrap border px-3 text-sm font-semibold transition ${
+                        question.answered
+                          ? "btn-secondary border-[#b9c9df] bg-[#f0f5fb] text-[#365783]"
+                          : "btn-secondary"
+                      }`}
+                    >
+                      {question.answered ? "Reopen" : "Mark answered"}
+                    </button>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <aside className="space-y-5 lg:sticky lg:top-5 lg:self-start">
             <form
               onSubmit={submitQuestion}
-              className="border border-[#d8d0c2] bg-white p-5 shadow-sm"
+              className="card p-5"
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-semibold">Ask a question</h2>
-                  <p className="mt-1 text-sm leading-6 text-[#617066]">
-                    Authenticated submissions sync live.
+                  <p className="mt-1 text-sm leading-6 muted">
+                    {user
+                      ? "Submissions appear in the queue immediately."
+                      : "Sign in below to submit and vote."}
                   </p>
                 </div>
-                <span className="border border-[#b7d9c1] bg-[#edf8f0] px-2 py-1 text-xs font-semibold text-[#27643a]">
+                <span className="pill pill-success">
                   Realtime
                 </span>
               </div>
 
               {submissionsClosed ? (
-                <div className="mt-4 border border-[#e4b5aa] bg-[#fff4f1] p-3 text-sm font-medium text-[#9b3c33]">
+                <div className="mt-4 rounded-md border border-[#e0b1a9] bg-[#fff8f6] p-3 text-sm font-medium text-[#a43d34]">
                   {room.archivedAt
                     ? "This room is archived. New questions are closed."
                     : "This room is locked. New questions are paused."}
@@ -265,11 +366,11 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
                     ? "What do you want the presenter to explain?"
                     : "Sign in to submit a question."
                 }
-                className="mt-2 min-h-36 w-full resize-none border border-[#cfc6b7] bg-[#fffdf8] px-3 py-3 text-base leading-6 outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce] disabled:bg-[#f3f0ea]"
+                className="field mt-2 min-h-36 resize-none px-3 py-3 text-base leading-6"
                 maxLength={220}
                 disabled={!user || isAuthLoading || submissionsClosed}
               />
-              <div className="mt-2 flex items-center justify-between text-xs text-[#6b766e]">
+              <div className="muted mt-2 flex items-center justify-between text-xs">
                 <span>{body.length}/220</span>
                 <span>Room: {roomSlug}</span>
               </div>
@@ -282,162 +383,34 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
                 value={author}
                 onChange={(event) => setAuthor(event.target.value)}
                 placeholder={defaultAuthor(user)}
-                className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce] disabled:bg-[#f3f0ea]"
+                className="field mt-2 h-11 px-3 text-base"
                 maxLength={28}
                 disabled={!user || isAuthLoading || submissionsClosed}
               />
 
               <button
                 type="submit"
-                className="mt-5 flex h-11 w-full items-center justify-center bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e] disabled:cursor-not-allowed disabled:bg-[#9aa49d]"
+                className="btn-primary mt-5 w-full"
                 disabled={!user || !body.trim() || isSubmitting || submissionsClosed}
               >
                 {isSubmitting ? "Submitting..." : "Submit question"}
               </button>
             </form>
 
-            <section className="border border-[#d8d0c2] bg-[#17201b] p-5 text-white shadow-sm">
-              <h2 className="text-lg font-semibold">Owner queue</h2>
-              <div className="mt-4 space-y-3 text-sm text-[#dbe5de]">
-                <div className="flex items-center justify-between border-b border-white/15 pb-3">
-                  <span>Next up</span>
-                  <strong className="text-white">
-                    {questions
-                      .filter((question) => !question.answered)
-                      .sort((a, b) => b.votes - a.votes)[0]?.topic ?? "Clear"}
-                  </strong>
-                </div>
-                <div className="flex items-center justify-between border-b border-white/15 pb-3">
-                  <span>Presenter mode</span>
-                  <a
-                    className="font-semibold text-white underline underline-offset-4"
-                    href={`/rooms/${roomSlug}/presenter`}
-                  >
-                    Open
-                  </a>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Answer controls</span>
-                  <strong className="text-white">
-                    {isModerator ? "Unlocked" : "Owner only"}
-                  </strong>
-                </div>
-              </div>
-            </section>
+            <AccountPanel
+              authMode={authMode}
+              email={email}
+              password={password}
+              authMessage={authMessage}
+              isModerator={isModerator}
+              user={user}
+              onAuth={handleAuth}
+              onAuthModeChange={setAuthMode}
+              onEmailChange={setEmail}
+              onPasswordChange={setPassword}
+              onSignOut={() => void signOut()}
+            />
           </aside>
-
-          <section className="min-w-0">
-            <div className="flex flex-col gap-4 border border-[#d8d0c2] bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">Questions</h2>
-                <p className="mt-1 text-sm text-[#617066]">
-                  Signed-in users can vote. Paid owners can mark answers.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-3 border border-[#cfc6b7] bg-[#f6f3ee] p-1">
-                {filters.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    onClick={() => setFilter(item.value)}
-                    className={`h-9 px-4 text-sm font-semibold transition ${
-                      filter === item.value
-                        ? "bg-white text-[#17201b] shadow-sm"
-                        : "text-[#617066] hover:text-[#17201b]"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {errorMessage ? (
-              <div className="mt-4 border border-[#e4b5aa] bg-[#fff4f1] p-4 text-sm font-medium text-[#9b3c33]">
-                {errorMessage}
-              </div>
-            ) : null}
-
-            <div className="mt-4 space-y-3">
-              {isLoading ? (
-                <div className="border border-[#d8d0c2] bg-white p-8 text-center text-sm font-medium text-[#617066] shadow-sm">
-                  Loading questions from Supabase...
-                </div>
-              ) : null}
-
-              {!isLoading && visibleQuestions.length === 0 ? (
-                <div className="border border-[#d8d0c2] bg-white p-8 text-center text-sm font-medium text-[#617066] shadow-sm">
-                  No questions in this view yet.
-                </div>
-              ) : null}
-
-              {visibleQuestions.map((question) => (
-                <article
-                  key={question.id}
-                  className={`grid gap-4 border p-4 shadow-sm transition sm:grid-cols-[72px_minmax(0,1fr)_auto] ${
-                    question.answered
-                      ? "border-[#d8d0c2] bg-[#fbfaf6]"
-                      : "border-[#cfd9d4] bg-white"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => void toggleVote(question.id)}
-                    disabled={!user}
-                    className={`flex h-20 w-full flex-col items-center justify-center border text-sm font-semibold transition disabled:cursor-not-allowed sm:w-[72px] ${
-                      votedIds.includes(question.id)
-                        ? "border-[#2f6f5e] bg-[#e4f4ed] text-[#174f40]"
-                        : "border-[#d8d0c2] bg-[#fffdf8] text-[#415049] hover:border-[#2f6f5e] disabled:bg-[#f3f0ea]"
-                    }`}
-                    aria-label={`Vote for question by ${question.author}`}
-                  >
-                    <span className="text-lg leading-none">↑</span>
-                    <span className="mt-1 text-xl leading-none">{question.votes}</span>
-                  </button>
-
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="bg-[#f0e5d5] px-2 py-1 text-xs font-semibold text-[#724626]">
-                        {question.topic}
-                      </span>
-                      {question.answered ? (
-                        <span className="bg-[#e7ecf7] px-2 py-1 text-xs font-semibold text-[#344f85]">
-                          Answered
-                        </span>
-                      ) : null}
-                      {question.mine ? (
-                        <span className="bg-[#f8e2df] px-2 py-1 text-xs font-semibold text-[#9b3c33]">
-                          Voted
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <p className="mt-3 text-lg font-medium leading-7 text-[#17201b]">
-                      {question.body}
-                    </p>
-                    <p className="mt-3 text-sm text-[#617066]">
-                      Asked by {question.author} · {question.createdAt}
-                    </p>
-                  </div>
-
-                  {isModerator ? (
-                    <button
-                      type="button"
-                      onClick={() => void toggleAnswered(question.id)}
-                      className={`h-10 whitespace-nowrap border px-3 text-sm font-semibold transition ${
-                        question.answered
-                          ? "border-[#b8c3d8] bg-[#f3f6fb] text-[#344f85] hover:bg-white"
-                          : "border-[#cfc6b7] bg-[#fffdf8] text-[#415049] hover:border-[#2f6f5e] hover:text-[#174f40]"
-                      }`}
-                    >
-                      {question.answered ? "Reopen" : "Mark answered"}
-                    </button>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          </section>
         </div>
       </div>
     </main>
@@ -470,16 +443,20 @@ function AccountPanel({
   onSignOut: () => void;
 }) {
   return (
-    <section className="border border-[#d8d0c2] bg-white p-5 shadow-sm">
+    <section className="card p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold">Account</h2>
-          <p className="mt-1 text-sm leading-6 text-[#617066]">
-            Sign in to submit questions and vote.
+          <h2 className="text-lg font-semibold">
+            {user ? "Signed in" : "Sign in to participate"}
+          </h2>
+          <p className="mt-1 text-sm leading-6 muted">
+            {user
+              ? "Your votes and questions are tied to this account."
+              : "Required for submitting questions and voting."}
           </p>
         </div>
         {isModerator ? (
-          <span className="border border-[#b8c3d8] bg-[#f3f6fb] px-2 py-1 text-xs font-semibold text-[#344f85]">
+          <span className="pill pill-info">
             Moderator
           </span>
         ) : null}
@@ -487,20 +464,20 @@ function AccountPanel({
 
       {user ? (
         <div className="mt-4">
-          <p className="break-all text-sm font-semibold text-[#17201b]">
+          <p className="break-all text-sm font-semibold">
             {user.email}
           </p>
           <button
             type="button"
             onClick={onSignOut}
-            className="mt-4 h-10 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-sm font-semibold text-[#415049] transition hover:border-[#2f6f5e] hover:text-[#174f40]"
+            className="btn-secondary mt-4 w-full"
           >
             Sign out
           </button>
         </div>
       ) : (
         <form onSubmit={onAuth} className="mt-4">
-          <div className="grid grid-cols-2 border border-[#cfc6b7] bg-[#f6f3ee] p-1">
+          <div className="grid grid-cols-2 rounded-md border border-[#cbbfaf] bg-[#eee8dc] p-1">
             {(["sign-in", "sign-up"] as AuthMode[]).map((mode) => (
               <button
                 key={mode}
@@ -508,8 +485,8 @@ function AccountPanel({
                 onClick={() => onAuthModeChange(mode)}
                 className={`h-9 px-3 text-sm font-semibold transition ${
                   authMode === mode
-                    ? "bg-white text-[#17201b] shadow-sm"
-                    : "text-[#617066] hover:text-[#17201b]"
+                    ? "rounded bg-white text-[#18211d] shadow-sm"
+                    : "muted hover:text-[#18211d]"
                 }`}
               >
                 {mode === "sign-in" ? "Sign in" : "Create account"}
@@ -525,7 +502,7 @@ function AccountPanel({
             type="email"
             value={email}
             onChange={(event) => onEmailChange(event.target.value)}
-            className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce]"
+            className="field mt-2 h-11 px-3 text-base"
             required
           />
 
@@ -537,20 +514,20 @@ function AccountPanel({
             type="password"
             value={password}
             onChange={(event) => onPasswordChange(event.target.value)}
-            className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce]"
+            className="field mt-2 h-11 px-3 text-base"
             minLength={6}
             required
           />
 
           {authMessage ? (
-            <p className="mt-3 text-sm font-medium text-[#9b3c33]">
+            <p className="mt-3 text-sm font-medium text-[#a43d34]">
               {authMessage}
             </p>
           ) : null}
 
           <button
             type="submit"
-            className="mt-5 flex h-11 w-full items-center justify-center bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e]"
+            className="btn-primary mt-5 w-full"
           >
             {authMode === "sign-in" ? "Sign in" : "Create account"}
           </button>
@@ -564,7 +541,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="border-r border-[#d8d0c2] px-4 py-3 last:border-r-0">
       <div className="text-2xl font-semibold">{value}</div>
-      <div className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#617066]">
+      <div className="muted mt-1 text-xs font-semibold uppercase tracking-[0.12em]">
         {label}
       </div>
     </div>

@@ -2,57 +2,33 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-[#f6f3ee] text-[#17201b]">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex items-center justify-between border-b border-[#ded7cb] pb-5">
-          <Link href="/" className="text-lg font-semibold">
+    <main className="app-page">
+      <div className="app-shell max-w-6xl">
+        <header className="topbar">
+          <Link href="/" className="text-xl font-semibold tracking-tight">
             Fellowship
-          </Link>
-          <Link
-            href="/owner"
-            className="inline-flex h-10 items-center border border-[#cfc6b7] bg-white px-4 text-sm font-semibold text-[#415049] transition hover:border-[#2f6f5e] hover:text-[#174f40]"
-          >
-            Owner dashboard
           </Link>
         </header>
 
-        <section className="grid flex-1 gap-8 py-10 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center">
+        <section className="grid flex-1 gap-8 py-8 lg:grid-cols-[minmax(0,1fr)_430px] lg:items-center">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a14d38]">
-              Live audience Q&A
-            </p>
-            <h1 className="mt-3 max-w-3xl text-4xl font-semibold leading-tight sm:text-6xl">
-              Join a room or manage your event.
+            <p className="eyebrow">Live audience Q&A</p>
+            <h1 className="mt-4 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
+              Join the Q&A room your host shared.
             </h1>
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-[#617066]">
-              Audience members can ask questions and vote for free. Event owners
-              use the dashboard to manage rooms, admins, presenter mode, and
-              billing.
+            <p className="muted mt-5 max-w-2xl text-lg leading-8">
+              Enter the room slug from your event link to ask questions, vote,
+              and follow what the presenter is answering.
             </p>
-
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/rooms/main"
-                className="inline-flex h-12 items-center justify-center bg-[#17201b] px-5 text-sm font-semibold text-white transition hover:bg-[#2f6f5e]"
-              >
-                Join main room
-              </Link>
-              <Link
-                href="/owner"
-                className="inline-flex h-12 items-center justify-center border border-[#cfc6b7] bg-white px-5 text-sm font-semibold text-[#415049] transition hover:border-[#2f6f5e] hover:text-[#174f40]"
-              >
-                Open owner dashboard
-              </Link>
-            </div>
           </div>
 
           <div className="space-y-5">
             <form
               action={joinRoom}
-              className="border border-[#d8d0c2] bg-white p-5 shadow-sm"
+              className="card p-5"
             >
               <h2 className="text-xl font-semibold">Join a room</h2>
-              <p className="mt-1 text-sm leading-6 text-[#617066]">
+              <p className="muted mt-1 text-sm leading-6">
                 Enter the room slug from your event host.
               </p>
               <label className="mt-5 block text-sm font-medium" htmlFor="room">
@@ -62,29 +38,30 @@ export default function Home() {
                 id="room"
                 name="room"
                 placeholder="workshop-day-1"
-                className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce]"
+                className="field mt-2 h-11 px-3 text-base"
                 pattern="[A-Za-z0-9][A-Za-z0-9-]{0,62}"
                 required
               />
               <button
                 type="submit"
-                className="mt-4 h-11 w-full bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e]"
+                className="btn-primary mt-4 w-full"
               >
                 Go to room
               </button>
             </form>
 
-            <section className="border border-[#d8d0c2] bg-[#17201b] p-5 text-white shadow-sm">
-              <h2 className="text-xl font-semibold">For owners</h2>
-              <p className="mt-2 text-sm leading-6 text-[#dbe5de]">
-                Create organizations, add admins, create rooms, and manage the
-                $5/month Stripe subscription.
-              </p>
+            <section className="flex items-center justify-between gap-4 rounded-lg bg-[#102f2a] p-5 text-white shadow-sm">
+              <div>
+                <h2 className="text-lg font-semibold">Hosting an event?</h2>
+                <p className="mt-1 text-sm leading-6 text-[#dce8e2]">
+                  Create rooms and open presenter mode from the owner console.
+                </p>
+              </div>
               <Link
                 href="/owner"
-                className="mt-5 inline-flex h-10 items-center bg-white px-4 text-sm font-semibold text-[#17201b] transition hover:bg-[#f6f3ee]"
+                className="inline-flex min-h-10 shrink-0 items-center rounded-md bg-white px-4 text-sm font-semibold text-[#102f2a] transition hover:bg-[#f7f4ec]"
               >
-                Manage events
+                Owner console
               </Link>
             </section>
           </div>

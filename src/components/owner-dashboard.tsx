@@ -334,11 +334,11 @@ export default function OwnerDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f3ee] text-[#17201b]">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 border-b border-[#ded7cb] pb-5 sm:flex-row sm:items-center sm:justify-between">
+    <main className="app-page">
+      <div className="app-shell max-w-6xl">
+        <header className="topbar">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a14d38]">
+            <p className="eyebrow">
               Owner Console
             </p>
             <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">
@@ -347,34 +347,34 @@ export default function OwnerDashboard() {
           </div>
           <Link
             href="/rooms/main"
-            className="inline-flex h-10 items-center border border-[#cfc6b7] bg-white px-4 text-sm font-semibold text-[#415049] transition hover:border-[#2f6f5e] hover:text-[#174f40]"
+            className="btn-secondary"
           >
             Audience room
           </Link>
         </header>
 
         {message ? (
-          <div className="border border-[#e4b5aa] bg-[#fff4f1] p-4 text-sm font-medium text-[#9b3c33]">
+          <div className="rounded-md border border-[#e0b1a9] bg-[#fff8f6] p-4 text-sm font-medium text-[#a43d34]">
             {message}
           </div>
         ) : null}
 
         {isLoading ? (
-          <section className="border border-[#d8d0c2] bg-white p-6 shadow-sm">
+          <section className="card p-6">
             Loading account...
           </section>
         ) : user ? (
           <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
             <aside className="space-y-5">
-              <section className="border border-[#d8d0c2] bg-white p-5 shadow-sm">
+              <section className="card p-5">
                 <h2 className="text-lg font-semibold">Account</h2>
-                <p className="mt-3 break-all text-sm font-semibold text-[#17201b]">
+                <p className="mt-3 break-all text-sm font-semibold">
                   {user.email}
                 </p>
                 <button
                   type="button"
                   onClick={() => void supabase.auth.signOut()}
-                  className="mt-4 h-10 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-sm font-semibold text-[#415049] transition hover:border-[#2f6f5e] hover:text-[#174f40]"
+                  className="btn-secondary mt-4 w-full"
                 >
                   Sign out
                 </button>
@@ -382,7 +382,7 @@ export default function OwnerDashboard() {
 
               <form
                 onSubmit={createOrganization}
-                className="border border-[#d8d0c2] bg-white p-5 shadow-sm"
+                className="card p-5"
               >
                 <h2 className="text-lg font-semibold">New organization</h2>
                 <label className="mt-4 block text-sm font-medium" htmlFor="org-name">
@@ -392,14 +392,14 @@ export default function OwnerDashboard() {
                   id="org-name"
                   value={orgName}
                   onChange={(event) => setOrgName(event.target.value)}
-                  className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce]"
+                  className="field mt-2 h-11 px-3 text-base"
                   maxLength={80}
                   required
                 />
                 <button
                   type="submit"
                   disabled={isWorking || !orgName.trim()}
-                  className="mt-4 h-11 w-full bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e] disabled:cursor-not-allowed disabled:bg-[#9aa49d]"
+                  className="btn-primary mt-4 w-full"
                 >
                   Create organization
                 </button>
@@ -407,11 +407,11 @@ export default function OwnerDashboard() {
             </aside>
 
             <section className="min-w-0 space-y-5">
-              <div className="border border-[#d8d0c2] bg-white p-5 shadow-sm">
+              <div className="card p-5">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <h2 className="text-xl font-semibold">Organizations</h2>
-                    <p className="mt-1 text-sm text-[#617066]">
+                    <p className="mt-1 text-sm muted">
                       The $5/month subscription is per organization owner account.
                     </p>
                   </div>
@@ -419,7 +419,7 @@ export default function OwnerDashboard() {
                     <select
                       value={selectedOrgId}
                       onChange={(event) => setSelectedOrgId(event.target.value)}
-                      className="h-11 border border-[#cfc6b7] bg-[#fffdf8] px-3 text-sm font-semibold outline-none"
+                      className="field h-11 px-3 text-sm font-semibold"
                     >
                       {organizations.map((org) => (
                         <option key={org.org_id} value={org.org_id}>
@@ -431,19 +431,19 @@ export default function OwnerDashboard() {
                 </div>
 
                 {organizations.length === 0 ? (
-                  <p className="mt-5 text-sm text-[#617066]">
+                  <p className="mt-5 text-sm muted">
                     Create an organization to start billing and manage rooms.
                   </p>
                 ) : null}
 
                 {selectedOrg ? (
-                  <div className="mt-5 border border-[#d8d0c2] bg-[#fbfaf6] p-4">
+                  <div className="mt-5 card-muted p-4">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <h3 className="text-lg font-semibold">
                           {selectedOrg.org_name}
                         </h3>
-                        <p className="mt-1 text-sm font-medium text-[#617066]">
+                        <p className="mt-1 text-sm font-medium muted">
                           Billing:{" "}
                           {selectedOrg.subscription_status ?? "not started"}
                         </p>
@@ -453,7 +453,7 @@ export default function OwnerDashboard() {
                           type="button"
                           onClick={() => void openStripe("checkout", selectedOrg.org_id)}
                           disabled={!canManageBilling || isWorking}
-                          className="h-10 bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e] disabled:cursor-not-allowed disabled:bg-[#9aa49d]"
+                          className="btn-primary h-10"
                         >
                           {subscriptionActive ? "Update plan" : "Start $5/month"}
                         </button>
@@ -461,7 +461,7 @@ export default function OwnerDashboard() {
                           type="button"
                           onClick={() => void openStripe("portal", selectedOrg.org_id)}
                           disabled={!canManageBilling || isWorking}
-                          className="h-10 border border-[#cfc6b7] bg-white px-4 text-sm font-semibold text-[#415049] transition hover:border-[#2f6f5e] hover:text-[#174f40] disabled:cursor-not-allowed disabled:text-[#9aa49d]"
+                          className="btn-secondary h-10"
                         >
                           Billing portal
                         </button>
@@ -472,15 +472,15 @@ export default function OwnerDashboard() {
               </div>
 
               {selectedOrg ? (
-                <section className="border border-[#d8d0c2] bg-white p-5 shadow-sm">
+                <section className="card p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <h2 className="text-xl font-semibold">Admins</h2>
-                      <p className="mt-1 text-sm text-[#617066]">
+                      <p className="mt-1 text-sm muted">
                         Owners can add existing users as organization admins.
                       </p>
                     </div>
-                    <span className="border border-[#cfc6b7] bg-[#fffdf8] px-2 py-1 text-xs font-semibold text-[#415049]">
+                    <span className="pill">
                       {selectedOrgMembers.length}
                     </span>
                   </div>
@@ -502,7 +502,7 @@ export default function OwnerDashboard() {
                         value={adminEmail}
                         onChange={(event) => setAdminEmail(event.target.value)}
                         placeholder="admin@example.com"
-                        className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce] disabled:bg-[#f3f0ea]"
+                        className="field mt-2 h-11 px-3 text-base"
                         disabled={!canManageAdmins}
                         required
                       />
@@ -510,14 +510,14 @@ export default function OwnerDashboard() {
                     <button
                       type="submit"
                       disabled={!canManageAdmins || isWorking || !adminEmail.trim()}
-                      className="h-11 self-end bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e] disabled:cursor-not-allowed disabled:bg-[#9aa49d]"
+                      className="btn-primary h-11 self-end"
                     >
                       Add admin
                     </button>
                   </form>
 
                   {!canManageAdmins ? (
-                    <p className="mt-3 text-sm text-[#617066]">
+                    <p className="mt-3 text-sm muted">
                       Only organization owners can add or remove admins.
                     </p>
                   ) : null}
@@ -526,13 +526,13 @@ export default function OwnerDashboard() {
                     {selectedOrgMembers.map((member) => (
                       <div
                         key={member.user_id}
-                        className="flex flex-col gap-3 border border-[#d8d0c2] bg-[#fbfaf6] p-4 sm:flex-row sm:items-center sm:justify-between"
+                        className="flex flex-col gap-3 card-muted p-4 sm:flex-row sm:items-center sm:justify-between"
                       >
                         <div>
                           <h3 className="break-all font-semibold">
                             {member.email}
                           </h3>
-                          <p className="mt-1 text-sm text-[#617066]">
+                          <p className="mt-1 text-sm muted">
                             {member.role === "owner" ? "Owner" : "Admin"}
                           </p>
                         </div>
@@ -542,7 +542,7 @@ export default function OwnerDashboard() {
                           disabled={
                             !canManageAdmins || isWorking || member.role === "owner"
                           }
-                          className="h-10 border border-[#cfc6b7] bg-white px-3 text-sm font-semibold text-[#415049] transition hover:border-[#9b3c33] hover:text-[#9b3c33] disabled:cursor-not-allowed disabled:text-[#9aa49d]"
+                          className="btn-secondary h-10"
                         >
                           Remove
                         </button>
@@ -555,20 +555,20 @@ export default function OwnerDashboard() {
               {selectedOrg ? (
                 <form
                   onSubmit={createRoom}
-                  className="border border-[#d8d0c2] bg-white p-5 shadow-sm"
+                  className="card p-5"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <h2 className="text-xl font-semibold">Rooms</h2>
-                      <p className="mt-1 text-sm text-[#617066]">
+                      <p className="mt-1 text-sm muted">
                         Paid owners can create and manage presenter rooms.
                       </p>
                     </div>
                     <span
-                      className={`border px-2 py-1 text-xs font-semibold ${
+                      className={`pill ${
                         subscriptionActive
-                          ? "border-[#b7d9c1] bg-[#edf8f0] text-[#27643a]"
-                          : "border-[#e4b5aa] bg-[#fff4f1] text-[#9b3c33]"
+                          ? "pill-success"
+                          : "border-[#e0b1a9] bg-[#fff8f6] text-[#a43d34]"
                       }`}
                     >
                       {subscriptionActive ? "Active" : "Paywalled"}
@@ -585,7 +585,7 @@ export default function OwnerDashboard() {
                         value={roomSlug}
                         onChange={(event) => setRoomSlug(event.target.value)}
                         placeholder="workshop-day-1"
-                        className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce] disabled:bg-[#f3f0ea]"
+                        className="field mt-2 h-11 px-3 text-base"
                         pattern="[a-z0-9][a-z0-9-]{0,62}"
                         disabled={!subscriptionActive}
                         required
@@ -600,7 +600,7 @@ export default function OwnerDashboard() {
                         value={roomName}
                         onChange={(event) => setRoomName(event.target.value)}
                         placeholder="Workshop Day 1"
-                        className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce] disabled:bg-[#f3f0ea]"
+                        className="field mt-2 h-11 px-3 text-base"
                         maxLength={48}
                         disabled={!subscriptionActive}
                       />
@@ -615,38 +615,38 @@ export default function OwnerDashboard() {
                       !roomSlug.trim() ||
                       !selectedOrg
                     }
-                    className="mt-4 h-11 bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e] disabled:cursor-not-allowed disabled:bg-[#9aa49d]"
+                    className="btn-primary mt-4 h-11"
                   >
                     Create room
                   </button>
 
                   <div className="mt-5 space-y-3">
                     {selectedOrgRooms.length === 0 ? (
-                      <p className="text-sm text-[#617066]">
+                      <p className="text-sm muted">
                         No owned rooms yet.
                       </p>
                     ) : (
                       selectedOrgRooms.map((room) => (
                         <div
                           key={room.slug}
-                          className="flex flex-col gap-3 border border-[#d8d0c2] bg-[#fbfaf6] p-4 sm:flex-row sm:items-center sm:justify-between"
+                          className="flex flex-col gap-3 card-muted p-4 sm:flex-row sm:items-center sm:justify-between"
                         >
                           <div>
                             <h3 className="font-semibold">{room.name}</h3>
-                            <p className="mt-1 text-sm text-[#617066]">
+                            <p className="mt-1 text-sm muted">
                               /rooms/{room.slug}
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-3">
                             <Link
                               href={`/rooms/${room.slug}`}
-                              className="inline-flex h-10 items-center border border-[#cfc6b7] bg-white px-3 text-sm font-semibold text-[#415049] transition hover:border-[#2f6f5e] hover:text-[#174f40]"
+                              className="btn-secondary h-10"
                             >
                               Audience
                             </Link>
                             <Link
                               href={`/rooms/${room.slug}/presenter`}
-                              className="inline-flex h-10 items-center bg-[#17201b] px-3 text-sm font-semibold text-white transition hover:bg-[#2f6f5e]"
+                              className="btn-primary h-10"
                             >
                               Presenter
                             </Link>
@@ -658,7 +658,7 @@ export default function OwnerDashboard() {
                                 Boolean(deletingRoomSlug) ||
                                 isWorking
                               }
-                              className="h-10 border border-[#e4b5aa] bg-white px-3 text-sm font-semibold text-[#9b3c33] transition hover:bg-[#fff4f1] disabled:cursor-not-allowed disabled:border-[#d8d0c2] disabled:text-[#9aa49d]"
+                              className="btn-danger h-10"
                             >
                               {deletingRoomSlug === room.slug
                                 ? "Deleting..."
@@ -676,10 +676,10 @@ export default function OwnerDashboard() {
         ) : (
           <form
             onSubmit={handleAuth}
-            className="max-w-md border border-[#d8d0c2] bg-white p-5 shadow-sm"
+            className="max-w-md card p-5"
           >
             <h2 className="text-lg font-semibold">Owner account</h2>
-            <div className="mt-4 grid grid-cols-2 border border-[#cfc6b7] bg-[#f6f3ee] p-1">
+            <div className="mt-4 grid grid-cols-2 rounded-md border border-[#cbbfaf] bg-[#eee8dc] p-1">
               {(["sign-in", "sign-up"] as AuthMode[]).map((mode) => (
                 <button
                   key={mode}
@@ -687,8 +687,8 @@ export default function OwnerDashboard() {
                   onClick={() => setAuthMode(mode)}
                   className={`h-9 px-3 text-sm font-semibold transition ${
                     authMode === mode
-                      ? "bg-white text-[#17201b] shadow-sm"
-                      : "text-[#617066] hover:text-[#17201b]"
+                      ? "rounded bg-white text-[#18211d] shadow-sm"
+                      : "muted hover:text-[#18211d]"
                   }`}
                 >
                   {mode === "sign-in" ? "Sign in" : "Create account"}
@@ -704,7 +704,7 @@ export default function OwnerDashboard() {
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce]"
+              className="field mt-2 h-11 px-3 text-base"
               required
             />
 
@@ -716,14 +716,14 @@ export default function OwnerDashboard() {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="mt-2 h-11 w-full border border-[#cfc6b7] bg-[#fffdf8] px-3 text-base outline-none transition focus:border-[#2f6f5e] focus:ring-2 focus:ring-[#b8d8ce]"
+              className="field mt-2 h-11 px-3 text-base"
               minLength={6}
               required
             />
 
             <button
               type="submit"
-              className="mt-5 h-11 w-full bg-[#17201b] px-4 text-sm font-semibold text-white transition hover:bg-[#2f6f5e]"
+              className="btn-primary mt-5 w-full"
             >
               {authMode === "sign-in" ? "Sign in" : "Create account"}
             </button>
