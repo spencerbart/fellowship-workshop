@@ -8,6 +8,9 @@ export type QuestionRow = {
   room_slug: string;
   created_at: string;
   answered_at: string | null;
+  moderation_status: "approved" | "highlighted" | null;
+  moderation_score: number | null;
+  moderation_reason: string | null;
 };
 
 export type VoteRow = {
@@ -30,6 +33,9 @@ export type Question = {
   votes: number;
   createdAt: string;
   answered: boolean;
+  highlighted: boolean;
+  moderationScore: number | null;
+  moderationReason: string | null;
   mine?: boolean;
 };
 

@@ -5,10 +5,11 @@ import { FormEvent, useMemo, useState } from "react";
 import { AuthMode, defaultAuthor, roomTitle } from "./qa-types";
 import { useRoomQa } from "./use-room-qa";
 
-type Filter = "top" | "new" | "answered";
+type Filter = "top" | "highlighted" | "new" | "answered";
 
 const filters: { label: string; value: Filter }[] = [
   { label: "Top", value: "top" },
+  { label: "AI picks", value: "highlighted" },
   { label: "New", value: "new" },
   { label: "Answered", value: "answered" },
 ];
@@ -40,11 +41,19 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
     const filtered =
       filter === "answered"
         ? questions.filter((question) => question.answered)
-        : questions.filter((question) => !question.answered);
+        : questions.filter(
+            (question) =>
+              !question.answered &&
+              (filter !== "highlighted" || question.highlighted),
+          );
 
     return [...filtered].sort((a, b) => {
       if (filter === "new") {
         return b.id - a.id;
+      }
+
+      if (a.highlighted !== b.highlighted) {
+        return Number(b.highlighted) - Number(a.highlighted);
       }
 
       return b.votes - a.votes;
@@ -53,6 +62,9 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
 
   const totalVotes = questions.reduce((sum, question) => sum + question.votes, 0);
   const openQuestions = questions.filter((question) => !question.answered).length;
+  const highlightedQuestions = questions.filter(
+    (question) => !question.answered && question.highlighted,
+  ).length;
   const answeredQuestions = questions.length - openQuestions;
   const displayRoomTitle = room.name || roomTitle(roomSlug) || roomSlug;
   const submissionsClosed = room.isLocked || Boolean(room.archivedAt);
@@ -108,33 +120,55 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
     setIsSubmitting(true);
     setErrorMessage("");
 
-    const { data: insertedQuestion, error: insertError } = await supabase
-      .from("questions")
-      .insert({
-        body: trimmedBody,
-        author: trimmedAuthor || defaultAuthor(user),
-        topic: "Audience",
-        room_slug: roomSlug,
-        user_id: user.id,
-      })
-      .select("id")
-      .single();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
 
-    if (insertError) {
-      setErrorMessage(insertError.message);
+    if (!token) {
+      setErrorMessage("Sign in before submitting a question.");
       setIsSubmitting(false);
       return;
     }
 
-    await supabase.from("votes").insert({
-      question_id: insertedQuestion.id,
+    const response = await fetch("/api/questions", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        body: trimmedBody,
+        author: trimmedAuthor || defaultAuthor(user),
+        roomSlug,
+      }),
+    });
+
+    const result = (await response.json().catch(() => null)) as
+      | {
+          question?: { id: number };
+          moderation?: { action?: "allow" | "highlight" | "reject" };
+          error?: string;
+        }
+      | null;
+
+    if (!response.ok || !result?.question) {
+      setErrorMessage(result?.error ?? "Could not submit that question.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    const { error: voteError } = await supabase.from("votes").insert({
+      question_id: result.question.id,
       client_id: user.id,
       user_id: user.id,
     });
 
+    if (voteError) {
+      setErrorMessage(voteError.message);
+    }
+
     setBody("");
     setAuthor("");
-    setFilter("new");
+    setFilter(result.moderation?.action === "highlight" ? "highlighted" : "new");
     setIsSubmitting(false);
     await loadQuestions(user);
   }
@@ -206,8 +240,9 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
             </h1>
           </div>
 
-          <div className="card grid grid-cols-3 overflow-hidden sm:w-[460px]">
+          <div className="card grid grid-cols-4 overflow-hidden sm:w-[560px]">
             <Stat label="Open" value={openQuestions} />
+            <Stat label="AI picks" value={highlightedQuestions} />
             <Stat label="Answered" value={answeredQuestions} />
             <Stat label="Votes" value={totalVotes} />
           </div>
@@ -223,7 +258,7 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
                 </p>
               </div>
 
-              <div className="grid grid-cols-3 rounded-md border border-[#cbbfaf] bg-[#eee8dc] p-1">
+              <div className="grid grid-cols-2 rounded-md border border-[#cbbfaf] bg-[#eee8dc] p-1 sm:grid-cols-4">
                 {filters.map((item) => (
                   <button
                     key={item.value}
@@ -294,6 +329,11 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
                           Answered
                         </span>
                       ) : null}
+                      {question.highlighted ? (
+                        <span className="pill pill-success">
+                          AI pick
+                        </span>
+                      ) : null}
                       {question.mine ? (
                         <span className="pill">
                           Voted
@@ -337,7 +377,7 @@ export default function LiveQaBoard({ roomSlug }: { roomSlug: string }) {
                   <h2 className="text-lg font-semibold">Ask a question</h2>
                   <p className="mt-1 text-sm leading-6 muted">
                     {user
-                      ? "Submissions appear in the queue immediately."
+                      ? "AI screens each submission before it enters the queue."
                       : "Sign in below to submit and vote."}
                   </p>
                 </div>

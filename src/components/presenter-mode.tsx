@@ -35,13 +35,22 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
   const displayRoomTitle = room.name || roomTitle(roomSlug) || roomSlug;
   const openQuestions = questions
     .filter((question) => !question.answered)
-    .sort((a, b) => b.votes - a.votes);
+    .sort((a, b) => {
+      if (a.highlighted !== b.highlighted) {
+        return Number(b.highlighted) - Number(a.highlighted);
+      }
+
+      return b.votes - a.votes;
+    });
   const visibleQueue = openQuestions.filter(
     (question) => !skippedIds.includes(question.id),
   );
   const currentQuestion = visibleQueue[0] ?? openQuestions[0];
   const totalVotes = questions.reduce((sum, question) => sum + question.votes, 0);
   const answeredQuestions = questions.length - openQuestions.length;
+  const highlightedQuestions = openQuestions.filter(
+    (question) => question.highlighted,
+  ).length;
 
   const upcomingQuestions = useMemo(
     () =>
@@ -232,6 +241,7 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
 
           <div className="flex flex-wrap gap-3">
             <PresenterStat label="Open" value={openQuestions.length} />
+            <PresenterStat label="AI picks" value={highlightedQuestions} />
             <PresenterStat label="Answered" value={answeredQuestions} />
             <PresenterStat label="Votes" value={totalVotes} />
           </div>
@@ -259,6 +269,11 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
                     <span className="pill pill-success px-3 py-2 text-sm">
                       {currentQuestion.votes} votes
                     </span>
+                    {currentQuestion.highlighted ? (
+                      <span className="pill pill-info px-3 py-2 text-sm">
+                        AI pick
+                      </span>
+                    ) : null}
                   </div>
 
                   <p className="mt-6 max-w-5xl text-3xl font-semibold leading-tight sm:text-5xl lg:text-[3.35rem]">
@@ -489,6 +504,7 @@ export default function PresenterMode({ roomSlug }: { roomSlug: string }) {
                       className="rounded-md border border-white/15 bg-white/5 p-3"
                     >
                       <div className="text-sm font-semibold text-[#f6f3ee]">
+                        {question.highlighted ? "AI pick · " : ""}
                         {question.votes} votes
                       </div>
                       <p className="mt-2 line-clamp-3 text-sm leading-6 text-[#dbe5de]">

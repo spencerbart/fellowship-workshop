@@ -98,7 +98,9 @@ export function useRoomQa(roomSlug: string) {
       ] = await Promise.all([
         supabase
           .from("questions")
-          .select("id, body, author, topic, room_slug, created_at, answered_at")
+          .select(
+            "id, body, author, topic, room_slug, created_at, answered_at, moderation_status, moderation_score, moderation_reason",
+          )
           .eq("room_slug", roomSlug)
           .order("created_at", { ascending: false }),
         supabase.from("votes").select("question_id, user_id"),
@@ -146,6 +148,9 @@ export function useRoomQa(roomSlug: string) {
           votes: votesByQuestion.get(question.id) ?? 0,
           createdAt: formatTimeAgo(question.created_at),
           answered: Boolean(question.answered_at),
+          highlighted: question.moderation_status === "highlighted",
+          moderationScore: question.moderation_score,
+          moderationReason: question.moderation_reason,
           mine: myVotes.has(question.id),
         })),
       );
